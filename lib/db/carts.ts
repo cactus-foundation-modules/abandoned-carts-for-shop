@@ -6,6 +6,7 @@ import {
   type CapturedAddress,
   type CartLine,
   type CartStage,
+  type PaymentStage,
 } from '@/modules/abandoned-carts-for-shop/lib/types'
 
 // Every read and write of this module's own tables. Raw SQL throughout, like
@@ -52,6 +53,10 @@ function mapCart(row: Row): AbandonedCart {
     shippingRateId: (row.shipping_rate_id as string) ?? null,
     paymentMethod: (row.payment_method as string) ?? null,
     consentBasis: (row.consent_basis as string) ?? 'none',
+    marketingOptOut: row.marketing_opt_out === true,
+    paymentStage: (row.payment_stage as PaymentStage) ?? null,
+    paymentAttemptedAt: asIso(row.payment_attempted_at),
+    paymentFailureReason: (row.payment_failure_reason as string) ?? null,
     memberId: (row.member_id as string) ?? null,
     firstSeenAt: asIso(row.first_seen_at) ?? '',
     updatedAt: asIso(row.updated_at) ?? '',
@@ -67,6 +72,7 @@ const COLUMNS = Prisma.sql`
   "id", "stage", "lines", "item_count", "subtotal", "currency",
   "customer_email", "customer_name", "customer_phone", "shipping_address",
   "coupon_code", "shipping_rate_id", "payment_method", "consent_basis",
+  "marketing_opt_out", "payment_stage", "payment_attempted_at", "payment_failure_reason",
   "member_id", "first_seen_at", "updated_at", "checkout_started_at",
   "reminder_count", "reminder_sent_at", "recovered_at", "recovered_order_number"
 `
@@ -87,6 +93,14 @@ export type CaptureInput = {
   couponCode: string | null
   shippingRateId: string | null
   paymentMethod: string | null
+  /** The permission box in the checkout: true ticked, false unticked, null no
+   *  box or no answer. Null leaves whatever the row already says alone - see
+   *  captureCart. */
+  marketingOptOut: boolean | null
+  /** How far the payment got, where anything has happened to it. Null means
+   *  nothing new to say, and never clears what the row already holds. */
+  paymentStage: PaymentStage | null
+  paymentFailureReason: string | null
 }
 
 /**
@@ -109,6 +123,7 @@ export async function captureCart(input: CaptureInput): Promise<void> {
       "visitor_id", "member_id", "stage", "lines", "item_count", "subtotal", "currency",
       "customer_email", "customer_name", "customer_phone", "shipping_address",
       "coupon_code", "shipping_rate_id", "payment_method", "consent_basis",
+      "marketing_opt_out", "payment_stage", "payment_attempted_at", "payment_failure_reason",
       "checkout_started_at", "updated_at"
     ) VALUES (
       ${input.visitorId}, ${input.memberId}, ${input.stage},
@@ -116,6 +131,8 @@ export async function captureCart(input: CaptureInput): Promise<void> {
       ${input.customerEmail}, ${input.customerName}, ${input.customerPhone},
       ${input.shippingAddress ? JSON.stringify(input.shippingAddress) : null}::jsonb,
       ${input.couponCode}, ${input.shippingRateId}, ${input.paymentMethod}, ${input.consentBasis},
+      ${input.marketingOptOut ?? false},
+      ${input.paymentStage}, ${input.paymentStage ? new Date() : null}, ${input.paymentFailureReason},
       ${checkoutStarted ? new Date() : null}, CURRENT_TIMESTAMP
     )
     ON CONFLICT ("visitor_id") WHERE "recovered_at" IS NULL DO UPDATE SET
@@ -133,6 +150,20 @@ export async function captureCart(input: CaptureInput): Promise<void> {
       "shipping_rate_id" = COALESCE(EXCLUDED."shipping_rate_id", "abc_carts"."shipping_rate_id"),
       "payment_method" = COALESCE(EXCLUDED."payment_method", "abc_carts"."payment_method"),
       "consent_basis" = EXCLUDED."consent_basis",
+      -- Not a COALESCE like the typed fields above: an unticked box is a real
+      -- answer and has to be able to undo a ticked one. It is the ABSENCE of a
+      -- box, or of any answer to it, that leaves the row as it was.
+      "marketing_opt_out" = CASE WHEN ${input.marketingOptOut !== null}
+        THEN EXCLUDED."marketing_opt_out" ELSE "abc_carts"."marketing_opt_out" END,
+      -- The payment's own story only ever moves when something has happened to
+      -- it. An ordinary basket update says nothing about it and must not wipe a
+      -- refusal recorded ten seconds ago; a fresh attempt after a refusal is
+      -- the shopper trying again, and replaces it.
+      "payment_stage" = COALESCE(EXCLUDED."payment_stage", "abc_carts"."payment_stage"),
+      "payment_attempted_at" = CASE WHEN EXCLUDED."payment_stage" IS NULL
+        THEN "abc_carts"."payment_attempted_at" ELSE EXCLUDED."payment_attempted_at" END,
+      "payment_failure_reason" = CASE WHEN EXCLUDED."payment_stage" IS NULL
+        THEN "abc_carts"."payment_failure_reason" ELSE EXCLUDED."payment_failure_reason" END,
       "checkout_started_at" = COALESCE("abc_carts"."checkout_started_at", EXCLUDED."checkout_started_at"),
       "updated_at" = CURRENT_TIMESTAMP
   `
@@ -260,8 +291,9 @@ export type ReminderCandidate = AbandonedCart & { unsubscribeToken: string }
 
 /**
  * Baskets a reminder is owed on: left alone for longer than the delay, with an
- * address on them, not already reminded as often as the owner allows, and not
- * belonging to somebody who has asked us to stop.
+ * address on them, not already reminded as often as the owner allows, not
+ * belonging to somebody who has asked us to stop, and not ticked "don't email
+ * me" in the checkout where the owner offers that box.
  *
  * The suppression check is a NOT EXISTS rather than a filter applied afterwards,
  * so a list capped at 200 can never come back full of rows that will all be
@@ -278,6 +310,7 @@ export async function listDueReminders(opts: {
       AND "customer_email" IS NOT NULL
       AND "item_count" > 0
       AND "updated_at" < ${opts.olderThan}
+      AND "marketing_opt_out" = false
       AND "reminder_count" < ${opts.maxPerCart}
       AND ("reminder_sent_at" IS NULL OR "reminder_sent_at" < ${opts.olderThan})
       AND NOT EXISTS (
@@ -311,6 +344,24 @@ export async function suppressEmail(email: string): Promise<void> {
   if (!address) return
   await prisma.$executeRaw`
     INSERT INTO "abc_suppressions" ("email") VALUES (${address}) ON CONFLICT ("email") DO NOTHING
+  `
+}
+
+/**
+ * Mark every basket held for this address as "do not email".
+ *
+ * What the unsubscribe link does beyond suppressing the address: the two say the
+ * same thing, and a list showing "reminded once" with nothing to explain why the
+ * next one never went is how an owner ends up believing the emails are broken.
+ * Suppression is still the thing that enforces it - this is the same answer,
+ * written where it can be read.
+ */
+export async function optOutEmail(email: string): Promise<void> {
+  const address = normaliseEmail(email)
+  if (!address) return
+  await prisma.$executeRaw`
+    UPDATE "abc_carts" SET "marketing_opt_out" = true
+    WHERE LOWER("customer_email") = ${address}
   `
 }
 

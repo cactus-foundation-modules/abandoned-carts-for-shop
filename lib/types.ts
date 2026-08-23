@@ -25,6 +25,70 @@ export const SHOP_CHECKOUT_KEY = 'cactus_shop_checkout'
 export const SHOP_CART_EVENT = 'cactus-shop-cart-changed'
 export const SHOP_CHECKOUT_EVENT = 'cactus-shop-checkout-changed'
 
+/** Shop announces the press of Place order on this one, and a checkout refusal
+ *  on the other. Read for the same reason the storage keys above are: the shop's
+ *  own checkout already says both out loud, so this module listens rather than
+ *  asking the shop to grow anything. */
+export const SHOP_PLACE_ORDER_EVENT = 'cactus-shop-place-order'
+export const SHOP_ORDER_ERROR_EVENT = 'cactus-shop-order-error'
+
+/**
+ * The id of the checkout tickbox this module asks the shop to carry.
+ *
+ * The shop already lets an owner add their own tickboxes to the checkout, so
+ * the permission box is one of those rather than anything new in the shop: this
+ * module writes the entry into the shop's own settings when the owner switches
+ * it on, and takes it out again when they switch it off. Prefixed so it is
+ * obvious in the shop's tickbox list whose it is.
+ */
+export const OPTOUT_AGREEMENT_ID = 'abc-marketing-optout'
+
+/** What the box says until the owner writes something better. Plain, negative,
+ *  and ticked by the shopper who wants to be left alone - so a shopper who
+ *  ignores it entirely is left exactly where they were. */
+export const DEFAULT_OPTOUT_STATEMENT = "Don't email me about offers and similar products."
+
+/** Nobody needs a paragraph beside a tickbox. */
+export const MAX_STATEMENT_LENGTH = 200
+
+/** One of the shop's checkout tickboxes, in the shape the shop stores them.
+ *  Declared structurally rather than imported so this file stays free of
+ *  imports and the browser half can read it. */
+export type CheckoutTickbox = {
+  id: string
+  statement: string
+  linkUrl: string
+  required: boolean
+  enabled: boolean
+}
+
+/**
+ * The shop's tickbox list with this module's permission box put in, or taken
+ * out. The list arrives as the owner has it and leaves in the same order, with
+ * ours appended: the compulsory boxes are the ones holding the order up, and a
+ * question about emails belongs under them rather than among them.
+ *
+ * Never required, whatever else is on the list. A permission box that refuses
+ * the order is not a question, it is a toll.
+ */
+export function withOptOutBox(
+  current: CheckoutTickbox[],
+  options: { wanted: boolean; statement: string },
+): CheckoutTickbox[] {
+  const others = current.filter((box) => box.id !== OPTOUT_AGREEMENT_ID)
+  if (!options.wanted) return others
+  return [
+    ...others,
+    {
+      id: OPTOUT_AGREEMENT_ID,
+      statement: options.statement,
+      linkUrl: '',
+      required: false,
+      enabled: true,
+    },
+  ]
+}
+
 /**
  * Whether there is a cookie switch to wait for at all.
  *
@@ -54,6 +118,10 @@ export type AbandonedCartsSettings = {
   emailsEnabled: boolean
   emailDelayMinutes: number
   emailMaxPerCart: number
+  /** Whether the checkout carries the "don't email me" box. */
+  optOutBoxEnabled: boolean
+  /** The owner's wording for it. */
+  optOutStatement: string
 }
 
 /** Everything the browser half of the tracker needs, handed down as props. */
@@ -63,6 +131,33 @@ export type TrackerConfig = {
 }
 
 export type CartStage = 'BASKET' | 'CHECKOUT'
+
+/**
+ * How far the payment got.
+ *
+ * 'ATTEMPTED' - Place order was pressed and nothing came back. Either the
+ *               shopper was handed over to a bank or a hosted card page and
+ *               never returned, or the tab went mid-payment.
+ * 'FAILED'    - the checkout came back with a refusal. The wording is kept as
+ *               the shopper was shown it.
+ * null        - never got that far.
+ *
+ * Worth having because the methods this catches (Square, open banking) write no
+ * order at all until the money is committed - by design - so a refused card
+ * leaves no trace anywhere else on the site.
+ */
+export type PaymentStage = 'ATTEMPTED' | 'FAILED'
+
+/** What the tracker reports about the payment. Absent means nothing new to say,
+ *  which never clears what the row already holds. */
+export type PaymentReport = {
+  stage: PaymentStage
+  reason?: string | null
+}
+
+/** Long enough for the sentence a checkout shows a shopper, short enough that a
+ *  stack trace posted here is not stored. */
+export const MAX_REASON_LENGTH = 300
 
 /** One basket line, in exactly the shape shop's own client storage holds. */
 export type CartLine = {
@@ -105,6 +200,12 @@ export type AbandonedCart = {
   firstSeenAt: string
   updatedAt: string
   checkoutStartedAt: string | null
+  /** The shopper ticked the checkout box asking not to be emailed. No reminder
+   *  goes out on this basket while it is true. */
+  marketingOptOut: boolean
+  paymentStage: PaymentStage | null
+  paymentAttemptedAt: string | null
+  paymentFailureReason: string | null
   reminderCount: number
   reminderSentAt: string | null
   recoveredAt: string | null
@@ -119,6 +220,15 @@ export type ResolvedCartLine = CartLine & {
   sku: string | null
   slug: string | null
   unitPrice: number | null
+}
+
+/** How the list says what became of the payment. Worded as what happened to the
+ *  shopper, not as a status: "ATTEMPTED" means they were sent off to pay and
+ *  never came back, which is a different missed sale from a refused card and is
+ *  chased differently. */
+export const PAYMENT_STAGE_LABELS: Record<PaymentStage, string> = {
+  ATTEMPTED: 'Sent to pay, never came back',
+  FAILED: 'Tried to pay, refused',
 }
 
 export const STAGE_LABELS: Record<CartStage, string> = {

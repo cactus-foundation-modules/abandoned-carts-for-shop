@@ -5,8 +5,12 @@ import { onConversion, type Conversion } from '@/lib/analytics/conversion'
 import {
   CONSENT_CHANGE_EVENT,
   MARKETING_CATEGORY,
+  MAX_REASON_LENGTH,
   SHOP_CART_EVENT,
   SHOP_CHECKOUT_EVENT,
+  SHOP_ORDER_ERROR_EVENT,
+  SHOP_PLACE_ORDER_EVENT,
+  type PaymentReport,
   type TrackerConfig,
 } from '@/modules/abandoned-carts-for-shop/lib/types'
 import { readCartLines, readCheckout } from '@/modules/abandoned-carts-for-shop/components/public/shop-storage'
@@ -76,6 +80,11 @@ export function CartTracker({ config }: { config: TrackerConfig }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const allowedRef = useRef(allowed)
   const capturedRef = useRef(false)
+  // What has happened to the payment, once anything has. Carried on every
+  // payload from then on, so the report made as the page is being left - which
+  // is the whole point of it for a shopper handed over to their bank - says so
+  // too.
+  const paymentRef = useRef<PaymentReport | null>(null)
 
   const buildPayload = useCallback((): string | null => {
     const lines = readCartLines()
@@ -91,7 +100,7 @@ export function CartTracker({ config }: { config: TrackerConfig }) {
       checkout?.shippingAddress?.line1 || checkout?.shippingAddress?.postcode
     )
     if (!captureBaskets && !typed && !capturedRef.current) return null
-    return JSON.stringify({ lines, checkout })
+    return JSON.stringify({ lines, checkout, payment: paymentRef.current })
   }, [captureBaskets])
 
   const send = useCallback((body: string, beacon: boolean): void => {
@@ -138,6 +147,7 @@ export function CartTracker({ config }: { config: TrackerConfig }) {
       if (timer.current) clearTimeout(timer.current)
       lastSent.current = null
       capturedRef.current = false
+      paymentRef.current = null
       void fetch(`${BASE}/forget`, { method: 'POST', keepalive: true }).catch(() => {})
     }
   }, [allowed])
@@ -189,6 +199,47 @@ export function CartTracker({ config }: { config: TrackerConfig }) {
     }
   }, [allowed, report])
 
+  // The payment itself, from the shop's own two events.
+  //
+  // Both are reported at once rather than on the debounce: the press of Place
+  // order is very often the last thing that happens in this tab - a method that
+  // settles on a bank's own site navigates away within the same tick - and a
+  // refusal is worth knowing about before the shopper closes a checkout they
+  // have just been told no on.
+  useEffect(() => {
+    if (!owner.current || !allowed) return
+
+    const flush = () => {
+      if (timer.current) clearTimeout(timer.current)
+      report(false)
+    }
+
+    const onPlaceOrder = () => {
+      // Pressed, and nothing has come back yet. It stays this way for a shopper
+      // handed over to a bank or a hosted card page who never returns, which is
+      // exactly the account the list could not give before.
+      paymentRef.current = { stage: 'ATTEMPTED', reason: null }
+      flush()
+    }
+
+    const onOrderError = (event: Event) => {
+      const detail = (event as CustomEvent).detail
+      // Kept as the shopper read it. The checkout has already worded this for a
+      // human, and re-writing somebody else's refusal here would only invent a
+      // reason we were not given.
+      const reason = typeof detail === 'string' ? detail.trim().slice(0, MAX_REASON_LENGTH) : null
+      paymentRef.current = { stage: 'FAILED', reason: reason || null }
+      flush()
+    }
+
+    window.addEventListener(SHOP_PLACE_ORDER_EVENT, onPlaceOrder)
+    window.addEventListener(SHOP_ORDER_ERROR_EVENT, onOrderError)
+    return () => {
+      window.removeEventListener(SHOP_PLACE_ORDER_EVENT, onPlaceOrder)
+      window.removeEventListener(SHOP_ORDER_ERROR_EVENT, onOrderError)
+    }
+  }, [allowed, report])
+
   // A sale. Announced by core, so the shop never has to know this module is
   // installed. Sent whatever the consent state: closing a record is not
   // collecting anything, and a shopper who withdrew consent has had their row
@@ -207,6 +258,7 @@ export function CartTracker({ config }: { config: TrackerConfig }) {
       }).catch(() => {})
       lastSent.current = null
       capturedRef.current = false
+      paymentRef.current = null
     })
   }, [])
 

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { clampInt, normaliseEmail, tidy } from '@/modules/abandoned-carts-for-shop/lib/types'
+import {
+  clampInt,
+  normaliseEmail,
+  OPTOUT_AGREEMENT_ID,
+  tidy,
+  withOptOutBox,
+  type CheckoutTickbox,
+} from '@/modules/abandoned-carts-for-shop/lib/types'
 
 // The three functions every piece of shopper-typed input passes through on its
 // way into the table. Tested here rather than through a route because that is
@@ -51,5 +58,28 @@ describe('clampInt', () => {
     expect(clampInt('later', 1, 365, 90)).toBe(90)
     expect(clampInt(undefined, 1, 365, 90)).toBe(90)
     expect(clampInt(Number.NaN, 1, 365, 90)).toBe(90)
+  })
+})
+
+describe('withOptOutBox', () => {
+  const owner = (id: string): CheckoutTickbox =>
+    ({ id, statement: `Box ${id}`, linkUrl: '', required: true, enabled: true })
+
+  it('puts the box under the owner’s own, never required', () => {
+    const next = withOptOutBox([owner('a'), owner('b')], { wanted: true, statement: 'No thanks.' })
+    expect(next.map((box) => box.id)).toEqual(['a', 'b', OPTOUT_AGREEMENT_ID])
+    expect(next[2]).toMatchObject({ statement: 'No thanks.', required: false, enabled: true })
+  })
+
+  it('re-words the box in place rather than adding a second one', () => {
+    const once = withOptOutBox([owner('a')], { wanted: true, statement: 'First wording' })
+    const twice = withOptOutBox(once, { wanted: true, statement: 'Second wording' })
+    expect(twice.filter((box) => box.id === OPTOUT_AGREEMENT_ID)).toHaveLength(1)
+    expect(twice[1]?.statement).toBe('Second wording')
+  })
+
+  it('takes the box out and leaves everything else where it was', () => {
+    const withBox = withOptOutBox([owner('a'), owner('b')], { wanted: true, statement: 'No thanks.' })
+    expect(withOptOutBox(withBox, { wanted: false, statement: 'No thanks.' })).toEqual([owner('a'), owner('b')])
   })
 })

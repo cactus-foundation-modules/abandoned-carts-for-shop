@@ -1,7 +1,9 @@
 import { prisma } from '@/lib/db/prisma'
 import {
   clampInt,
+  DEFAULT_OPTOUT_STATEMENT,
   MARKETING_CATEGORY,
+  MAX_STATEMENT_LENGTH,
   type AbandonedCartsSettings,
   type BannerState,
   type GateMode,
@@ -15,6 +17,8 @@ type SettingsRow = {
   emails_enabled: boolean
   email_delay_minutes: number
   email_max_per_cart: number
+  optout_box_enabled: boolean
+  optout_statement: string
 }
 
 // What the module does before its migration has run, or if the singleton row is
@@ -28,12 +32,15 @@ const BLANK: AbandonedCartsSettings = {
   emailsEnabled: false,
   emailDelayMinutes: 240,
   emailMaxPerCart: 1,
+  optOutBoxEnabled: false,
+  optOutStatement: DEFAULT_OPTOUT_STATEMENT,
 }
 
 export async function getAbandonedCartsSettings(): Promise<AbandonedCartsSettings> {
   const rows = await prisma.$queryRaw<SettingsRow[]>`
     SELECT "enabled", "abandon_after_minutes", "retention_days", "capture_baskets",
-           "emails_enabled", "email_delay_minutes", "email_max_per_cart"
+           "emails_enabled", "email_delay_minutes", "email_max_per_cart",
+           "optout_box_enabled", "optout_statement"
     FROM "abc_settings" WHERE "id" = 'singleton'
   `.catch(() => [] as SettingsRow[])
   const row = rows[0]
@@ -49,7 +56,19 @@ export async function getAbandonedCartsSettings(): Promise<AbandonedCartsSetting
     emailsEnabled: row.emails_enabled,
     emailDelayMinutes: clampInt(row.email_delay_minutes, 15, 60 * 24 * 14, 240),
     emailMaxPerCart: clampInt(row.email_max_per_cart, 1, 3, 1),
+    optOutBoxEnabled: row.optout_box_enabled === true,
+    // A box with nothing written beside it is an unanswerable question, and the
+    // shop drops a blank tickbox on the floor anyway - so a row emptied by hand
+    // reads as the wording it started with.
+    optOutStatement: tidyStatement(row.optout_statement) ?? DEFAULT_OPTOUT_STATEMENT,
   }
+}
+
+/** Trimmed and capped, and empty means "nothing was written". */
+export function tidyStatement(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim().slice(0, MAX_STATEMENT_LENGTH)
+  return trimmed.length > 0 ? trimmed : null
 }
 
 export async function updateAbandonedCartsSettings(patch: Partial<AbandonedCartsSettings>): Promise<void> {
@@ -77,6 +96,13 @@ export async function updateAbandonedCartsSettings(patch: Partial<AbandonedCarts
   if (patch.emailMaxPerCart !== undefined) {
     const value = clampInt(patch.emailMaxPerCart, 1, 3, 1)
     await prisma.$executeRaw`UPDATE "abc_settings" SET "email_max_per_cart" = ${value}, "updated_at" = CURRENT_TIMESTAMP WHERE "id" = 'singleton'`
+  }
+  if (patch.optOutBoxEnabled !== undefined) {
+    await prisma.$executeRaw`UPDATE "abc_settings" SET "optout_box_enabled" = ${patch.optOutBoxEnabled}, "updated_at" = CURRENT_TIMESTAMP WHERE "id" = 'singleton'`
+  }
+  if (patch.optOutStatement !== undefined) {
+    const value = tidyStatement(patch.optOutStatement) ?? DEFAULT_OPTOUT_STATEMENT
+    await prisma.$executeRaw`UPDATE "abc_settings" SET "optout_statement" = ${value}, "updated_at" = CURRENT_TIMESTAMP WHERE "id" = 'singleton'`
   }
 }
 

@@ -17,11 +17,16 @@ type Settings = {
   emailsEnabled: boolean
   emailDelayMinutes: number
   emailMaxPerCart: number
+  optOutBoxEnabled: boolean
+  optOutStatement: string
   banner: Banner
+  /** Whether the permission box is really in the checkout. It lives on the
+   *  shop's own tickbox list, where it can be edited or deleted. */
+  checkoutBoxLive: boolean
   adminPath: string
 }
 
-type Draft = Omit<Settings, 'banner' | 'adminPath'>
+type Draft = Omit<Settings, 'banner' | 'adminPath' | 'checkoutBoxLive'>
 
 function draftOf(s: Settings): Draft {
   return {
@@ -32,6 +37,8 @@ function draftOf(s: Settings): Draft {
     emailsEnabled: s.emailsEnabled,
     emailDelayMinutes: s.emailDelayMinutes,
     emailMaxPerCart: s.emailMaxPerCart,
+    optOutBoxEnabled: s.optOutBoxEnabled,
+    optOutStatement: s.optOutStatement,
   }
 }
 
@@ -65,6 +72,13 @@ function advice(saved: Settings): Array<{ tone: 'warning' | 'danger' | 'info'; t
     notes.push({
       tone: 'info',
       text: 'Nothing is recorded until a shopper agrees to Marketing cookies on your banner. A shopper who later changes their mind has everything of theirs deleted straight away, basket and typed details alike.',
+    })
+  }
+
+  if (saved.emailsEnabled && saved.optOutBoxEnabled && !saved.checkoutBoxLive) {
+    notes.push({
+      tone: 'warning',
+      text: 'The permission box is switched on here but is not in your checkout - it has been deleted or switched off on the shop\u2019s own Checkout settings, where it sits alongside your other tickboxes. Nobody is being asked. Save this page again to put it back.',
     })
   }
 
@@ -220,6 +234,44 @@ export function AbandonedCartsSettingsPanel() {
         never again to anybody who has asked us to stop. The wording is yours to change under{' '}
         <a href={`/${saved.adminPath}/config?tab=email&sub=templates`}>Settings &rsaquo; Emails</a>.
       </p>
+
+      {draft.emailsEnabled && (
+        <>
+          <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1.25rem', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={draft.optOutBoxEnabled}
+              onChange={(e) => set('optOutBoxEnabled', e.target.checked)}
+            />
+            <span>Add an email permission box to the checkout</span>
+          </label>
+          <p className="field-hint" style={{ marginTop: '-0.9rem', marginBottom: '1.25rem' }}>
+            Adds one more tickbox at the bottom of your checkout, under the ones a shopper has to
+            tick. Nobody has to tick it and it never holds an order up - but anybody who does is
+            left alone, and asking beforehand is a good deal politer than a link at the bottom of an
+            email they did not want. It appears with your other tickboxes on{' '}
+            <a href={`/${saved.adminPath}/config?tab=shop&sub=checkout`}>Settings &rsaquo; Shop &rsaquo; Checkout</a>,
+            where you can move or remove it.
+          </p>
+
+          {draft.optOutBoxEnabled && (
+            <div className="field">
+              <label htmlFor="abc-optout-statement">What the box says</label>
+              <input
+                id="abc-optout-statement"
+                type="text"
+                maxLength={200}
+                value={draft.optOutStatement}
+                onChange={(e) => set('optOutStatement', e.target.value)}
+              />
+              <p className="field-hint">
+                Worded so that ticking it means <em>no</em>. Leave it blank and it goes back to the
+                wording we ship with.
+              </p>
+            </div>
+          )}
+        </>
+      )}
 
       <div className="field">
         <label htmlFor="abc-email-delay">Wait before the reminder</label>

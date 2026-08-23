@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { formatMoney } from '@/modules/shop/lib/money'
 import {
+  PAYMENT_STAGE_LABELS,
   STAGE_LABELS,
   type AbandonedCart,
   type ResolvedCartLine,
@@ -248,6 +249,14 @@ export function AbandonedCartsScreen({ canManage }: { canManage: boolean }) {
                               Reminded {cart.reminderCount === 1 ? 'once' : `${cart.reminderCount} times`}
                             </span>
                           )}
+                          {!cart.recoveredAt && cart.paymentStage && (
+                            <span style={{ display: 'block', ...muted }}>
+                              {PAYMENT_STAGE_LABELS[cart.paymentStage]}
+                            </span>
+                          )}
+                          {!cart.recoveredAt && cart.marketingOptOut && (
+                            <span style={{ display: 'block', ...muted }}>No emails, please</span>
+                          )}
                         </td>
                         <td style={{ ...cell, textAlign: 'right' }}>{cart.itemCount}</td>
                         <td style={{ ...cell, textAlign: 'right', whiteSpace: 'nowrap' }}>{formatMoney(cart.subtotal, symbol)}</td>
@@ -295,8 +304,26 @@ export function AbandonedCartsScreen({ canManage }: { canManage: boolean }) {
                                 <h3 style={{ fontSize: '0.8125rem', margin: '0 0 0.35rem', ...muted }}>History</h3>
                                 <div>First seen {formatWhen(cart.firstSeenAt)}</div>
                                 {cart.checkoutStartedAt && <div>Reached checkout {formatWhen(cart.checkoutStartedAt)}</div>}
+                                {cart.paymentAttemptedAt && (
+                                  <div>
+                                    Pressed Place order {formatWhen(cart.paymentAttemptedAt)}
+                                    {cart.paymentStage === 'ATTEMPTED' && ' - and never came back'}
+                                  </div>
+                                )}
+                                {cart.paymentStage === 'FAILED' && (
+                                  <div>
+                                    The payment was refused
+                                    {cart.paymentFailureReason ? `: “${cart.paymentFailureReason}”` : '.'}
+                                  </div>
+                                )}
                                 {cart.reminderSentAt && <div>Last reminded {formatWhen(cart.reminderSentAt)}</div>}
                                 {cart.recoveredAt && <div>Ordered {formatWhen(cart.recoveredAt)}</div>}
+                                {cart.marketingOptOut && (
+                                  <div style={{ marginTop: '0.5rem' }}>
+                                    Asked not to be emailed about this one, in the checkout. No
+                                    reminder will go out on it.
+                                  </div>
+                                )}
                                 <div style={{ marginTop: '0.5rem', ...muted }}>
                                   {cart.consentBasis === 'none'
                                     ? 'Recorded with no cookie category on this site'

@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  OPTOUT_AGREEMENT_ID,
   SHOP_CART_KEY,
   SHOP_CHECKOUT_KEY,
   type CartLine,
@@ -31,6 +32,11 @@ export type CheckoutSnapshot = {
   couponCode?: string | null
   shippingRateId?: string | null
   paymentMethod?: string | null
+  /** The shopper's answer to the permission box, where the owner has one in the
+   *  checkout. Left undefined when there is no box, or nothing has been done to
+   *  it - undefined means "no answer", which is not the same as "no thanks" and
+   *  must never overwrite an answer already given. */
+  marketingOptOut?: boolean
 }
 
 function parse<T>(raw: string | null): T | null {
@@ -90,6 +96,14 @@ export function readCheckout(): CheckoutSnapshot | null {
     ? (state.shippingAddress as CapturedAddress)
     : undefined
   const text = (value: unknown): string | undefined => (typeof value === 'string' && value.trim() ? value : undefined)
+  // Shop keeps every checkout tickbox in one map, ours included: see
+  // lib/checkout-box.ts for why the box is one of the shop's own.
+  const agreements = (state.agreements && typeof state.agreements === 'object' && !Array.isArray(state.agreements))
+    ? (state.agreements as Record<string, unknown>)
+    : null
+  const optOut = typeof agreements?.[OPTOUT_AGREEMENT_ID] === 'boolean'
+    ? (agreements[OPTOUT_AGREEMENT_ID] as boolean)
+    : undefined
   return {
     customerEmail: text(state.customerEmail),
     customerName: text(state.customerName),
@@ -98,5 +112,6 @@ export function readCheckout(): CheckoutSnapshot | null {
     couponCode: text(state.couponCode) ?? null,
     shippingRateId: text(state.shippingRateId) ?? null,
     paymentMethod: text(state.paymentMethod) ?? null,
+    ...(optOut === undefined ? {} : { marketingOptOut: optOut }),
   }
 }

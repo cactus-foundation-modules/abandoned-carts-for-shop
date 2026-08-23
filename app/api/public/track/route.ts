@@ -6,7 +6,13 @@ import { consentBasis, mayCapture } from '@/modules/abandoned-carts-for-shop/lib
 import { captureCart, deleteOpenCart, forgetVisitor } from '@/modules/abandoned-carts-for-shop/lib/db/carts'
 import { summariseLines } from '@/modules/abandoned-carts-for-shop/lib/pricing'
 import { gateFromBanner, getAbandonedCartsSettings, getBannerState } from '@/modules/abandoned-carts-for-shop/lib/settings'
-import { MAX_LINES, normaliseEmail, tidy, type CapturedAddress } from '@/modules/abandoned-carts-for-shop/lib/types'
+import {
+  MAX_LINES,
+  MAX_REASON_LENGTH,
+  normaliseEmail,
+  tidy,
+  type CapturedAddress,
+} from '@/modules/abandoned-carts-for-shop/lib/types'
 import { clearVisitorCookie, mintVisitorId, readVisitorId, setVisitorCookie } from '@/modules/abandoned-carts-for-shop/lib/visitor'
 
 // POST /api/m/abandoned-carts-for-shop/public/track
@@ -53,6 +59,20 @@ const Body = z.object({
     couponCode: z.string().nullable().optional(),
     shippingRateId: z.string().nullable().optional(),
     paymentMethod: z.string().nullable().optional(),
+    // The permission box, where the owner has one in the checkout. Absent means
+    // no answer rather than "no thanks", and an absent answer never overwrites
+    // one already on the row.
+    marketingOptOut: z.boolean().optional(),
+  }).nullable().optional(),
+  // What has happened to the payment, where anything has. Absent on an ordinary
+  // basket update, which is why an ordinary update never clears it.
+  payment: z.object({
+    stage: z.enum(['ATTEMPTED', 'FAILED']),
+    // The sentence the checkout showed the shopper, kept as they read it. Capped
+    // rather than rejected: a long one is still worth having, and this is the
+    // only account of a refusal anywhere on the site - these payment methods
+    // write no order at all until the money is committed.
+    reason: z.string().max(MAX_REASON_LENGTH).nullable().optional(),
   }).nullable().optional(),
 })
 
@@ -147,6 +167,9 @@ export async function POST(request: NextRequest) {
     couponCode: tidy(checkout?.couponCode),
     shippingRateId: tidy(checkout?.shippingRateId),
     paymentMethod: tidy(checkout?.paymentMethod),
+    marketingOptOut: checkout?.marketingOptOut ?? null,
+    paymentStage: parsed.data.payment?.stage ?? null,
+    paymentFailureReason: parsed.data.payment ? tidy(parsed.data.payment.reason) : null,
   })
 
   return response

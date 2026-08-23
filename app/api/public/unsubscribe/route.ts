@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { findByUnsubscribeToken, suppressEmail } from '@/modules/abandoned-carts-for-shop/lib/db/carts'
+import { findByUnsubscribeToken, optOutEmail, suppressEmail } from '@/modules/abandoned-carts-for-shop/lib/db/carts'
 
 // GET/POST /api/m/abandoned-carts-for-shop/public/unsubscribe?t=<token>
 //
@@ -67,7 +67,12 @@ export async function POST(request: NextRequest) {
 <p style="margin:0;color:#6b6355">There are no reminders outstanding for it. Nothing further to do.</p>`, 404)
   }
 
+  // Both, and in this order. The suppression is what enforces it and outlives
+  // every basket; the opt-out is the same answer written on the baskets
+  // themselves, so the list reads exactly as it would had they ticked the
+  // permission box in the checkout - which is the same decision, said later.
   await suppressEmail(record.email)
+  await optOutEmail(record.email)
   return page(`<h1 style="font-size:1.25rem;margin:0 0 0.75rem">Done</h1>
-<p style="margin:0;color:#6b6355">That address will not get basket reminders from us again.</p>`)
+<p style="margin:0;color:#6b6355">That address will not get basket reminders from us again. Orders you place still get their confirmations, as they must.</p>`)
 }

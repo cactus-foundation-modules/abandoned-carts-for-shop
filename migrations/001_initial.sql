@@ -57,6 +57,12 @@ CREATE TABLE IF NOT EXISTS "abc_carts" (
     -- banner offering the category at all, which is the owner's own decision.
     "consent_basis" TEXT NOT NULL DEFAULT 'none',
 
+    -- The shopper's own answer, ticked in the checkout where the owner has
+    -- switched that box on (see lib/checkout-box.ts). True means no reminder
+    -- for this basket. Not a suppression: that is for good and is keyed on the
+    -- address, whereas this is one basket, and unticking the box takes it back.
+    "marketing_opt_out" BOOLEAN NOT NULL DEFAULT false,
+
     "first_seen_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "checkout_started_at" TIMESTAMP(3),
@@ -68,6 +74,19 @@ CREATE TABLE IF NOT EXISTS "abc_carts" (
     -- that is a hash of the address would let anybody who knows the address
     -- unsubscribe it, and worse, confirm it exists here.
     "unsubscribe_token" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+
+    -- How far the payment itself got, where the basket can tell. Heard from the
+    -- shop's own window events - the press of Place order, and a checkout error
+    -- - so nothing is asked of the shop for it.
+    --
+    -- 'ATTEMPTED' - pressed Place order and nothing came back: handed over to a
+    --               bank or a card page and never returned, or the tab went.
+    -- 'FAILED'    - the checkout refused it. The sentence the shopper was shown
+    --               is kept verbatim below rather than re-worded here.
+    -- NULL        - never got that far.
+    "payment_stage" TEXT,
+    "payment_attempted_at" TIMESTAMP(3),
+    "payment_failure_reason" TEXT,
 
     -- Set when an order was placed from this basket. The row stops being live
     -- at that moment: no more reminders, and a fresh basket starts a new row.
@@ -127,6 +146,12 @@ CREATE TABLE IF NOT EXISTS "abc_settings" (
     "emails_enabled" BOOLEAN NOT NULL DEFAULT false,
     "email_delay_minutes" INTEGER NOT NULL DEFAULT 240,
     "email_max_per_cart" INTEGER NOT NULL DEFAULT 1,
+
+    -- Offer the shopper the chance to say no, in the checkout, before any of
+    -- this happens. Off by default because it puts a line in somebody else's
+    -- checkout, and the wording is the owner's to write.
+    "optout_box_enabled" BOOLEAN NOT NULL DEFAULT false,
+    "optout_statement" TEXT NOT NULL DEFAULT 'Don''t email me about offers and similar products.',
 
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
