@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="module-art.webp" alt="Abandoned Baskets" width="640" />
+  <img src="module-art.webp" alt="Abandoned Carts" width="640" />
 </p>
 
-# Abandoned Baskets for Shop
+# Abandoned Carts for Shop
 
 Shows you the baskets nobody finished, and what the shopper had typed into the checkout before they went.
 
