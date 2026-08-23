@@ -1,0 +1,87 @@
+{
+  "name": "abandoned-carts-for-shop",
+  "version": "0.1.0",
+  "tablePrefix": "abc_",
+  "description": "Shows you the baskets nobody finished. Every unfinished basket lands on a tab in Trading with what was in it, what it was worth, and whatever the shopper had typed into the checkout before they went - name, email, phone, delivery address, discount code. Optional reminder emails, worded in your own Settings > Emails, go out to the ones who left an address. The whole thing waits on your cookie banner: no agreement, nothing recorded.",
+  "requiresCoreVersion": "0.5.1234",
+  "requiresModules": [
+    {
+      "name": "shop",
+      "minVersion": "0.1.300"
+    }
+  ],
+  "requiredEnvVars": [],
+  "permissions": [
+    "abandonedcarts.access",
+    "abandonedcarts.manage"
+  ],
+  "cookieCategories": [
+    {
+      "key": "marketing",
+      "label": "Marketing",
+      "description": "Lets us remember an unfinished basket and remind you about it, and measure which adverts led to an order."
+    }
+  ],
+  "settingsTabs": [
+    {
+      "id": "abandoned-carts-for-shop",
+      "label": "Abandoned baskets",
+      "permission": "abandonedcarts.manage",
+      "host": "shop.settings-sub-tabs",
+      "import": "./components/admin/AbandonedCartsSettingsPanel",
+      "component": "AbandonedCartsSettingsPanel"
+    }
+  ],
+  "extensionPoints": [
+    {
+      "point": "shop.orders-tabs",
+      "id": "abandoned-baskets",
+      "label": "Abandoned baskets",
+      "order": 30,
+      "permission": "abandonedcarts.access",
+      "import": "./components/admin/AbandonedCartsTab",
+      "component": "AbandonedCartsTab"
+    }
+  ],
+  "puckBlocks": [
+    {
+      "type": "AbandonedCartTracker",
+      "import": "./components/puck/AbandonedCartTracker",
+      "rscImport": "./components/puck/AbandonedCartTracker.rsc",
+      "component": "abandonedCartTrackerBlockComponent",
+      "rscComponent": "abandonedCartTrackerBlockRscComponent",
+      "layoutTypes": [
+        "header",
+        "footer"
+      ]
+    }
+  ],
+  "autoPlaceBlocks": [
+    {
+      "type": "AbandonedCartTracker",
+      "layoutType": "header"
+    }
+  ],
+  "emailTemplates": {
+    "groupLabel": "Abandoned baskets",
+    "import": "./lib/email-templates",
+    "export": "abandonedCartsEmailTemplates"
+  },
+  "cronJobs": [
+    {
+      "path": "/api/m/abandoned-carts-for-shop/cron/reminders",
+      "schedule": "0 * * * *"
+    }
+  ],
+  "memberExtensions": {
+    "activityTypes": [],
+    "notificationCategories": [],
+    "routeTiers": [],
+    "dataExportPath": "/api/m/abandoned-carts-for-shop/member/gdpr-export"
+  },
+  "teardown": [
+    "abc_carts",
+    "abc_suppressions",
+    "abc_settings"
+  ]
+}
