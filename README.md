@@ -18,7 +18,13 @@ The whole thing waits on your cookie banner. No agreement, nothing recorded.
 - **Marks its own successes.** A basket that turns into an order is closed and stamped with the order number, so the list tells you how many came back rather than only how many left.
 - **Asks first, if you want it to.** Switch the reminders on and you are offered a permission box for the checkout: one tickbox directly under the email box, worded by you. Anybody who ticks it is left alone.
 - **Optional reminders.** Off by default. On a delay you choose, at most three per basket, never to somebody who has since ordered, never again to somebody who has asked you to stop. Wording lives in **Settings › Emails** with every other email on the site.
-- **Deletes itself on a schedule.** Baskets older than your retention setting go, whether they were reminded, recovered or neither.
+- **Says whether the reminder actually went, and when.** Every attempt is written down - sent, would not send, or deliberately skipped, with the reason in plain English. The list carries it as a column; opening a basket shows the lot, in order, with who sent what by hand.
+- **Send one now.** For the basket worth chasing today rather than in four hours' time. It refuses exactly what the automatic run refuses: an unsubscribe, a ticked permission box, no address, or a shopper who has already ordered.
+- **Tells you whether the sender is even running.** A line under the figures says when the hourly job last went and what it did. A cron that has quietly stopped otherwise looks identical to a shop where nothing is due.
+- **Figures worth quoting.** What is sitting unfinished and what it is worth, how many got as far as the checkout, what share came back, and how many reminders went in the last month.
+- **Search, filter, sort, export.** By name, email, phone, postcode, discount code or order number; by date, by worth, by whether they can be emailed at all, by how the payment ended. Every combination is a link you can send somebody, and the CSV is whatever the screen is showing.
+- **The unsubscribe list, visible.** Who has asked you to stop, when, and a way to put somebody back on if they ask you to.
+- **Deletes itself on a schedule.** Baskets older than your retention setting go, whether they were reminded, recovered or neither. The record of reminders goes with them.
 
 ## Consent
 
@@ -70,13 +76,13 @@ Drawn by this module through the shop's `shop.checkout-contact-extras` point, so
 ## Permissions
 
 - `abandonedcarts.access` - see the list
-- `abandonedcarts.manage` - change the settings, delete a basket
+- `abandonedcarts.manage` - change the settings, send a reminder by hand, delete a basket, put an address back on the list
 
 Shop's own permissions deliberately do not grant either. Whoever may edit the catalogue is not automatically somebody who should be reading every shopper's address.
 
 ## Tables
 
-`abc_carts`, `abc_suppressions`, `abc_settings`. All declared for teardown, so uninstalling with data removal leaves nothing behind.
+`abc_carts`, `abc_suppressions`, `abc_settings`, `abc_reminder_log`, `abc_job_runs`. All declared for teardown, so uninstalling with data removal leaves nothing behind. The reminder log holds an email address, so it is on the same retention clock as the basket it belongs to and goes when that goes.
 
 ## Licence
 

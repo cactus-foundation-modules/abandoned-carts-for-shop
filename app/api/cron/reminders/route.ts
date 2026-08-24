@@ -10,18 +10,23 @@
 // just later.
 import { NextRequest, NextResponse } from 'next/server'
 import { errorResponse } from '@/lib/utils'
-import { runAbandonedCartJob } from '@/modules/abandoned-carts-for-shop/lib/reminders'
+import { recordFailedRun, runAbandonedCartJob } from '@/modules/abandoned-carts-for-shop/lib/reminders'
 
 async function handle(request: NextRequest) {
   const secret = process.env.CRON_SECRET
   if (!secret) return errorResponse('CRON_SECRET is not configured', 503)
   if (request.headers.get('authorization') !== `Bearer ${secret}`) return errorResponse('Unauthorized', 401)
 
+  const startedAt = Date.now()
   try {
     const result = await runAbandonedCartJob()
     return NextResponse.json({ ok: true, ...result })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'abandoned basket run failed'
+    // Written down before the 500 goes back. A run that died at the first query
+    // is the one an owner most needs to see on the screen, and a cron failure
+    // nobody is watching the logs for is otherwise invisible.
+    await recordFailedRun(startedAt, message)
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }

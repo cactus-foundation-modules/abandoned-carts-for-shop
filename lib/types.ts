@@ -215,6 +215,14 @@ export type AbandonedCart = {
   reminderSentAt: string | null
   recoveredAt: string | null
   recoveredOrderNumber: string | null
+  /** This address has unsubscribed, so nothing will ever go to it again -
+   *  whatever this basket says. Read alongside the row rather than looked up
+   *  per basket, so the list can say so plainly instead of leaving an owner to
+   *  wonder why the reminder never went. */
+  suppressed: boolean
+  /** The most recent attempt, sent or otherwise. Null when nothing has ever
+   *  been tried on this basket. */
+  lastReminder: ReminderLogEntry | null
 }
 
 /** A line with the catalogue's own words on it, for the detail panel. Resolved
@@ -268,4 +276,270 @@ export function normaliseEmail(value: unknown): string | null {
   if (!tidied) return null
   const lower = tidied.toLowerCase()
   return /^\S+@\S+\.\S+$/.test(lower) ? lower : null
+}
+
+// ---------------------------------------------------------------------------
+// Reminders: what happened, and what is going to
+// ---------------------------------------------------------------------------
+
+/** 'SKIPPED' is a first-class outcome, not a non-event. A reminder that was
+ *  deliberately not sent - unsubscribed, asked not to be, already ordered - is
+ *  exactly what an owner otherwise reads as a broken feature. */
+export type ReminderStatus = 'SENT' | 'FAILED' | 'SKIPPED'
+
+/** Who set it off: the hourly job, or somebody pressing the button. */
+export type ReminderTrigger = 'AUTOMATIC' | 'MANUAL'
+
+/** One attempt, as the detail panel lists it. */
+export type ReminderLogEntry = {
+  id: string
+  cartId: string
+  email: string
+  attempt: number
+  status: ReminderStatus
+  detail: string | null
+  trigger: ReminderTrigger
+  /** The admin who pressed Send, resolved to a name where core still has one. */
+  sentBy: string | null
+  sentByName: string | null
+  subject: string | null
+  itemCount: number
+  subtotal: number
+  createdAt: string
+}
+
+export const REMINDER_STATUS_LABELS: Record<ReminderStatus, string> = {
+  SENT: 'Sent',
+  FAILED: 'Did not send',
+  SKIPPED: 'Not sent on purpose',
+}
+
+/**
+ * The Reminder column, worked out rather than stored.
+ *
+ * Structured rather than a finished sentence so the dates are formatted once,
+ * in the browser, in the reader's own locale - and so this can be tested
+ * without a clock or a DOM. `tone` picks the badge colour; everything else is
+ * words.
+ */
+export type ReminderState = {
+  tone: 'sent' | 'failed' | 'blocked' | 'due' | 'none'
+  label: string
+  /** When the thing in `label` happened, where it has already happened. */
+  at: string | null
+  detail: string | null
+  /** When the next one is owed, where one is. */
+  nextDueAt: string | null
+}
+
+export type ReminderRules = {
+  emailsEnabled: boolean
+  emailDelayMinutes: number
+  emailMaxPerCart: number
+}
+
+/** Why this basket will never be emailed, or null if it could be. Split out
+ *  because the answer is wanted twice: on a basket nothing has been sent for,
+ *  and on one where something has, to say whether another is coming. */
+export function reminderBlockedReason(cart: AbandonedCart): string | null {
+  if (cart.recoveredAt) return 'They came back and ordered'
+  if (!cart.customerEmail) return 'No email address was typed'
+  if (cart.suppressed) return 'This address has unsubscribed'
+  if (cart.marketingOptOut) return 'They asked not to be emailed'
+  if (cart.itemCount < 1) return 'Nothing left in the basket'
+  return null
+}
+
+/**
+ * What the Reminder column says for one basket.
+ *
+ * Reads in the order an owner asks: did the last one fail, has anything gone at
+ * all, and if not, what is standing in the way. A failure outranks a success
+ * because it is the one that needs somebody, and both outrank "due in three
+ * hours", which needs nobody.
+ */
+export function describeReminder(cart: AbandonedCart, rules: ReminderRules): ReminderState {
+  const blocked = reminderBlockedReason(cart)
+  const last = cart.lastReminder
+
+  const dueAt = (): string | null => {
+    if (blocked || !rules.emailsEnabled) return null
+    if (cart.reminderCount >= rules.emailMaxPerCart) return null
+    const from = new Date(cart.reminderSentAt ?? cart.updatedAt).getTime()
+    if (!Number.isFinite(from)) return null
+    return new Date(from + rules.emailDelayMinutes * 60000).toISOString()
+  }
+
+  if (last?.status === 'FAILED') {
+    return { tone: 'failed', label: 'Did not send', at: last.createdAt, detail: last.detail, nextDueAt: dueAt() }
+  }
+
+  if (cart.reminderCount > 0 || last?.status === 'SENT') {
+    const at = last?.status === 'SENT' ? last.createdAt : cart.reminderSentAt
+    const next = dueAt()
+    const parts: string[] = []
+    if (cart.reminderCount > 1) parts.push(`${cart.reminderCount} sent in all`)
+    if (last?.trigger === 'MANUAL') parts.push(last.sentByName ? `Sent by hand by ${last.sentByName}` : 'Sent by hand')
+    if (!next && blocked) parts.push(blocked)
+    return { tone: 'sent', label: 'Sent', at, detail: parts.join(' · ') || null, nextDueAt: next }
+  }
+
+  if (blocked) {
+    // A basket that was already ordered is not a blocked reminder, it is a
+    // finished job. Saying "blocked" about it would put a warning badge on the
+    // one outcome everybody wanted.
+    const tone = cart.recoveredAt ? 'none' : 'blocked'
+    return { tone, label: cart.recoveredAt ? 'Not needed' : 'Will not be sent', at: null, detail: blocked, nextDueAt: null }
+  }
+
+  if (!rules.emailsEnabled) {
+    return { tone: 'none', label: 'Not sent', at: null, detail: 'Reminder emails are switched off', nextDueAt: null }
+  }
+
+  if (last?.status === 'SKIPPED') {
+    return { tone: 'none', label: 'Not sent', at: last.createdAt, detail: last.detail, nextDueAt: dueAt() }
+  }
+
+  return { tone: 'due', label: 'Due', at: null, detail: null, nextDueAt: dueAt() }
+}
+
+// ---------------------------------------------------------------------------
+// The list controls
+// ---------------------------------------------------------------------------
+
+/** How the list is sorted. Value first is the one an owner reaches for when
+ *  they have ten minutes and forty baskets. */
+export type CartSort = 'recent' | 'oldest' | 'value-high' | 'value-low' | 'items-high'
+
+export const CART_SORTS: CartSort[] = ['recent', 'oldest', 'value-high', 'value-low', 'items-high']
+
+export const CART_SORT_LABELS: Record<CartSort, string> = {
+  recent: 'Newest activity',
+  oldest: 'Oldest activity',
+  'value-high': 'Worth the most',
+  'value-low': 'Worth the least',
+  'items-high': 'Most items',
+}
+
+export type ContactFilter = '' | 'with-email' | 'without-email'
+export type RemindedFilter = '' | 'yes' | 'no' | 'failed' | 'blocked'
+export type PaymentFilter = '' | 'attempted' | 'failed'
+
+/** Everything the list is filtered by, which is also exactly what goes in the
+ *  query string - so a filtered list is a link somebody can send. */
+export type CartQuery = {
+  filter: CartFilter
+  search: string
+  contact: ContactFilter
+  reminded: RemindedFilter
+  payment: PaymentFilter
+  minValue: string
+  dateFrom: string
+  dateTo: string
+  sort: CartSort
+  page: number
+  perPage: number
+}
+
+export type CartFilter = 'all' | 'basket' | 'checkout' | 'recovered'
+
+export const CART_FILTERS: CartFilter[] = ['all', 'basket', 'checkout', 'recovered']
+
+export const CART_FILTER_LABELS: Record<CartFilter, string> = {
+  all: 'Everything',
+  basket: 'Basket only',
+  checkout: 'Checkout started',
+  recovered: 'Came back',
+}
+
+export const DEFAULT_CART_QUERY: CartQuery = {
+  filter: 'all', search: '', contact: '', reminded: '', payment: '', minValue: '',
+  dateFrom: '', dateTo: '', sort: 'recent', page: 1, perPage: 25,
+}
+
+export function cartQueryToParams(query: CartQuery): URLSearchParams {
+  const params = new URLSearchParams()
+  if (query.filter !== 'all') params.set('filter', query.filter)
+  if (query.search) params.set('search', query.search)
+  if (query.contact) params.set('contact', query.contact)
+  if (query.reminded) params.set('reminded', query.reminded)
+  if (query.payment) params.set('payment', query.payment)
+  if (query.minValue) params.set('minValue', query.minValue)
+  if (query.dateFrom) params.set('dateFrom', query.dateFrom)
+  if (query.dateTo) params.set('dateTo', query.dateTo)
+  if (query.sort !== DEFAULT_CART_QUERY.sort) params.set('sort', query.sort)
+  if (query.page > 1) params.set('page', String(query.page))
+  if (query.perPage !== DEFAULT_CART_QUERY.perPage) params.set('perPage', String(query.perPage))
+  return params
+}
+
+function oneOf<T extends string>(value: string | null, allowed: readonly T[], fallback: T): T {
+  return value && (allowed as readonly string[]).includes(value) ? (value as T) : fallback
+}
+
+export function paramsToCartQuery(params: URLSearchParams): CartQuery {
+  return {
+    filter: oneOf(params.get('filter'), CART_FILTERS, 'all'),
+    search: params.get('search') ?? '',
+    contact: oneOf(params.get('contact'), ['', 'with-email', 'without-email'] as const, ''),
+    reminded: oneOf(params.get('reminded'), ['', 'yes', 'no', 'failed', 'blocked'] as const, ''),
+    payment: oneOf(params.get('payment'), ['', 'attempted', 'failed'] as const, ''),
+    // The leading number and nothing else. Stripping non-digits instead turns
+    // "1' OR '1" into "11", which is harmless where it lands (the query is
+    // parameterised either way) and wrong on the screen, which is worse: a
+    // filter that quietly means something other than what the address bar says
+    // is how an owner comes to trust a list that is not showing what they
+    // asked for. Kept as a string rather than a number so an owner half way
+    // through typing "100" does not watch the list jump to everything over a
+    // pound and back.
+    minValue: (/^\d{1,9}(\.\d{1,2})?/.exec(params.get('minValue') ?? '') ?? [''])[0],
+    dateFrom: (params.get('dateFrom') ?? '').slice(0, 10),
+    dateTo: (params.get('dateTo') ?? '').slice(0, 10),
+    sort: oneOf(params.get('sort'), CART_SORTS, 'recent'),
+    page: clampInt(params.get('page'), 1, 10000, 1),
+    perPage: clampInt(params.get('perPage'), 5, 200, 25),
+  }
+}
+
+/** True when anything is narrowing the list, so the screen can offer to clear
+ *  it rather than leaving an owner staring at an empty table wondering why. */
+export function cartQueryIsFiltered(query: CartQuery): boolean {
+  return Boolean(
+    query.filter !== 'all' || query.search || query.contact || query.reminded ||
+    query.payment || query.minValue || query.dateFrom || query.dateTo,
+  )
+}
+
+// ---------------------------------------------------------------------------
+// The figures above the list
+// ---------------------------------------------------------------------------
+
+/** The tiles, and the health line under them. Money is a plain number: this is
+ *  an indication worked out from the catalogue, never an invoice. */
+export type AbandonedCartsStats = {
+  openCount: number
+  openValue: number
+  checkoutCount: number
+  checkoutValue: number
+  withEmailCount: number
+  recoveredCount: number
+  recoveredValue: number
+  /** Of the baskets first seen in the last 30 days, the share that ended in an
+   *  order. Null when there were none, because 0% of nothing is a lie. */
+  recoveryRate: number | null
+  remindersSent30d: number
+  remindersFailed30d: number
+  unsubscribedCount: number
+  lastRun: JobRunSummary | null
+}
+
+export type JobRunSummary = {
+  ranAt: string
+  durationMs: number
+  purged: number
+  considered: number
+  sent: number
+  skipped: number
+  failed: number
+  error: string | null
 }

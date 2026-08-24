@@ -22,12 +22,26 @@ export function escapeHtml(value: string): string {
 }
 
 /**
+ * What became of one attempt.
+ *
+ * A plain false told the caller nothing, which is how a shop ends up with a
+ * basket marked "not reminded" for three different reasons that need three
+ * different things doing about them. The reason is written as the owner would
+ * have to be told it, because it goes straight onto the screen and into the
+ * log.
+ */
+export type ReminderSendResult =
+  | { ok: true; subject: string }
+  | { ok: false; reason: string; permanent: boolean }
+
+/**
  * Reminds a shopper what they left behind.
  *
- * Returns false when the site cannot send at all, or has no SITE_URL: a
- * reminder with no way back to the basket and no way to stop the reminders is
- * not a shorter email, it is a worse one. The caller uses the false to leave the
- * basket unmarked, so it is picked up again once the site is configured.
+ * Fails rather than sends when the site cannot email at all, or has no
+ * SITE_URL: a reminder with no way back to the basket and no way to stop the
+ * reminders is not a shorter email, it is a worse one. `permanent` says whether
+ * trying again in an hour could possibly help - a missing email provider is
+ * worth retrying, a basket of products the shop has since deleted is not.
  */
 export async function sendBasketReminder(params: {
   to: string
@@ -35,10 +49,14 @@ export async function sendBasketReminder(params: {
   lines: ResolvedCartLine[]
   subtotal: number
   unsubscribeToken: string
-}): Promise<boolean> {
-  if (!isEmailConfigured()) return false
+}): Promise<ReminderSendResult> {
+  if (!isEmailConfigured()) {
+    return { ok: false, reason: 'This site has no email provider set up yet', permanent: false }
+  }
   const site = getSiteUrlOrNull()
-  if (!site) return false
+  if (!site) {
+    return { ok: false, reason: 'This site has no web address set, so the email would have no link back', permanent: false }
+  }
 
   const branding = await resolveBranding()
   const config = await getShopConfigCached()
@@ -48,7 +66,9 @@ export async function sendBasketReminder(params: {
   // blank: an email about something the shop no longer sells sends somebody to
   // a 404 with our name on it.
   const listed = params.lines.filter((line) => line.name && line.slug)
-  if (listed.length === 0) return false
+  if (listed.length === 0) {
+    return { ok: false, reason: 'Nothing in this basket is still in the catalogue', permanent: true }
+  }
 
   const itemList = listed
     .map((line) => {
@@ -73,8 +93,10 @@ export async function sendBasketReminder(params: {
     itemCount: String(listed.reduce((sum, line) => sum + line.quantity, 0)),
     basketTotal: formatMoney(params.subtotal, config.currencySymbol),
   })
-  if (!rendered) return false
+  if (!rendered) {
+    return { ok: false, reason: 'The reminder email is switched off in Settings > Emails', permanent: false }
+  }
 
   await sendEmail({ to: params.to, subject: rendered.subject, html: rendered.html, text: rendered.text })
-  return true
+  return { ok: true, subject: rendered.subject }
 }

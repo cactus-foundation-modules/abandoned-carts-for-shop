@@ -1,8 +1,8 @@
 {
   "name": "abandoned-carts-for-shop",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "tablePrefix": "abc_",
-  "description": "Shows you the baskets nobody finished. Every unfinished basket lands on a tab in Trading with what was in it, what it was worth, and whatever the shopper had typed into the checkout before they went - name, email, phone, delivery address, discount code. Optional reminder emails, worded in your own Settings > Emails, go out to the ones who left an address. The whole thing waits on your cookie banner: no agreement, nothing recorded.",
+  "description": "Shows you the baskets nobody finished. Every unfinished basket lands on a tab in Trading with what was in it, what it was worth, and whatever the shopper had typed into the checkout before they went - name, email, phone, delivery address, discount code. Optional reminder emails, worded in your own Settings > Emails, go out to the ones who left an address - and the list says of each basket whether one went, when, and if not, why not. Search, filter, sort, export, and send one by hand when a basket is worth chasing today. The whole thing waits on your cookie banner: no agreement, nothing recorded.",
   "requiresCoreVersion": "0.5.1234",
   "requiresModules": [
     {
@@ -86,6 +86,8 @@
     "dataExportPath": "/api/m/abandoned-carts-for-shop/member/gdpr-export"
   },
   "teardown": [
+    "abc_reminder_log",
+    "abc_job_runs",
     "abc_carts",
     "abc_suppressions",
     "abc_settings"

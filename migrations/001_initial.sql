@@ -160,3 +160,67 @@ CREATE TABLE IF NOT EXISTS "abc_settings" (
 );
 
 INSERT INTO "abc_settings" ("id") VALUES ('singleton') ON CONFLICT ("id") DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- What happened to each reminder.
+--
+-- One row per attempt, including the ones deliberately not made: a reminder
+-- that never went is the thing an owner is most likely to mistake for a broken
+-- feature, so "we skipped this, and here is why" is written down rather than
+-- inferred. Cascades with the basket, because it holds an address and must not
+-- outlive the retention purge.
+--
+-- Also declared in 003, which is the file that reaches installs made before it
+-- existed. The two must say the same thing.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS "abc_reminder_log" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "cart_id" TEXT NOT NULL,
+    -- The address as it stood at the time, kept rather than joined: the
+    -- basket's address can change afterwards, and "we emailed this person" has
+    -- to stay true about the person we emailed.
+    "email" TEXT NOT NULL,
+    "attempt" INTEGER NOT NULL DEFAULT 1,
+    -- 'SENT' | 'FAILED' | 'SKIPPED', with the why in "detail".
+    "status" TEXT NOT NULL,
+    "detail" TEXT,
+    -- 'AUTOMATIC' (the hourly job) | 'MANUAL' (somebody pressed the button).
+    "trigger" TEXT NOT NULL DEFAULT 'AUTOMATIC',
+    "sent_by" TEXT,
+    "subject" TEXT,
+    "item_count" INTEGER NOT NULL DEFAULT 0,
+    "subtotal" NUMERIC(10,2) NOT NULL DEFAULT 0,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "abc_reminder_log_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "abc_reminder_log_cart_fkey" FOREIGN KEY ("cart_id")
+        REFERENCES "abc_carts"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS "abc_reminder_log_cart_idx" ON "abc_reminder_log" ("cart_id", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "abc_reminder_log_created_idx" ON "abc_reminder_log" ("created_at");
+CREATE INDEX IF NOT EXISTS "abc_reminder_log_status_idx" ON "abc_reminder_log" ("status");
+
+-- ---------------------------------------------------------------------------
+-- One row per run of the hourly job, so "is this thing even running?" has an
+-- answer on screen. No personal data, trimmed to the last hundred runs on
+-- write. Also declared in 003.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS "abc_job_runs" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "ran_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "duration_ms" INTEGER NOT NULL DEFAULT 0,
+    "purged" INTEGER NOT NULL DEFAULT 0,
+    "considered" INTEGER NOT NULL DEFAULT 0,
+    "sent" INTEGER NOT NULL DEFAULT 0,
+    "skipped" INTEGER NOT NULL DEFAULT 0,
+    "failed" INTEGER NOT NULL DEFAULT 0,
+    -- Set when the run itself fell over, as opposed to individual sends failing.
+    "error" TEXT,
+
+    CONSTRAINT "abc_job_runs_pkey" PRIMARY KEY ("id")
+);
+
+CREATE INDEX IF NOT EXISTS "abc_job_runs_ran_at_idx" ON "abc_job_runs" ("ran_at" DESC);

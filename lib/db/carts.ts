@@ -3,10 +3,17 @@ import { prisma } from '@/lib/db/prisma'
 import {
   normaliseEmail,
   type AbandonedCart,
+  type AbandonedCartsStats,
   type CapturedAddress,
+  type CartFilter,
   type CartLine,
+  type CartQuery,
   type CartStage,
+  type JobRunSummary,
   type PaymentStage,
+  type ReminderLogEntry,
+  type ReminderStatus,
+  type ReminderTrigger,
 } from '@/modules/abandoned-carts-for-shop/lib/types'
 
 // Every read and write of this module's own tables. Raw SQL throughout, like
@@ -65,6 +72,43 @@ function mapCart(row: Row): AbandonedCart {
     reminderSentAt: asIso(row.reminder_sent_at),
     recoveredAt: asIso(row.recovered_at),
     recoveredOrderNumber: (row.recovered_order_number as string) ?? null,
+    // Both arrive from the list query's own joins rather than a second round
+    // trip per row; a list of 200 baskets asking two questions each is how a
+    // screen that reads fine on a quiet shop falls over on a busy one.
+    suppressed: row.suppressed === true,
+    lastReminder: row.last_reminder_id ? mapLogRow({
+      id: row.last_reminder_id,
+      cart_id: row.id,
+      email: row.last_reminder_email,
+      attempt: row.last_reminder_attempt,
+      status: row.last_reminder_status,
+      detail: row.last_reminder_detail,
+      trigger: row.last_reminder_trigger,
+      sent_by: row.last_reminder_sent_by,
+      sent_by_name: row.last_reminder_sent_by_name,
+      subject: row.last_reminder_subject,
+      item_count: row.last_reminder_item_count,
+      subtotal: row.last_reminder_subtotal,
+      created_at: row.last_reminder_created_at,
+    }) : null,
+  }
+}
+
+function mapLogRow(row: Row): ReminderLogEntry {
+  return {
+    id: row.id as string,
+    cartId: row.cart_id as string,
+    email: (row.email as string) ?? '',
+    attempt: asNumber(row.attempt),
+    status: (row.status as ReminderStatus) ?? 'SENT',
+    detail: (row.detail as string) ?? null,
+    trigger: (row.trigger as ReminderTrigger) ?? 'AUTOMATIC',
+    sentBy: (row.sent_by as string) ?? null,
+    sentByName: (row.sent_by_name as string) ?? null,
+    subject: (row.subject as string) ?? null,
+    itemCount: asNumber(row.item_count),
+    subtotal: asNumber(row.subtotal),
+    createdAt: asIso(row.created_at) ?? '',
   }
 }
 
@@ -206,50 +250,168 @@ export async function markRecoveredByEmail(email: string, orderNumber: string | 
   `
 }
 
-export type CartFilter = 'all' | 'basket' | 'checkout' | 'recovered'
-
 function filterClause(filter: CartFilter): Prisma.Sql {
   switch (filter) {
     case 'basket':
-      return Prisma.sql`"recovered_at" IS NULL AND "stage" = 'BASKET'`
+      return Prisma.sql`c."recovered_at" IS NULL AND c."stage" = 'BASKET'`
     case 'checkout':
-      return Prisma.sql`"recovered_at" IS NULL AND "stage" = 'CHECKOUT'`
+      return Prisma.sql`c."recovered_at" IS NULL AND c."stage" = 'CHECKOUT'`
     case 'recovered':
-      return Prisma.sql`"recovered_at" IS NOT NULL`
+      return Prisma.sql`c."recovered_at" IS NOT NULL`
     default:
       return Prisma.sql`TRUE`
   }
 }
 
-export async function listCarts(opts: {
-  filter: CartFilter
-  search: string
-  page: number
-  perPage: number
-}): Promise<{ carts: AbandonedCart[]; total: number }> {
-  const where = filterClause(opts.filter)
-  const search = opts.search.trim().toLowerCase()
-  const searchClause = search
-    ? Prisma.sql`AND (LOWER(COALESCE("customer_email", '')) LIKE ${`%${search}%`}
-        OR LOWER(COALESCE("customer_name", '')) LIKE ${`%${search}%`}
-        OR LOWER(COALESCE("customer_phone", '')) LIKE ${`%${search}%`}
-        OR LOWER(COALESCE("recovered_order_number", '')) LIKE ${`%${search}%`})`
-    : Prisma.empty
+/**
+ * The last attempt on each basket, and whether the address has unsubscribed.
+ *
+ * A LATERAL rather than a GROUP BY: this wants the whole newest row, not an
+ * aggregate of it, and a lateral limited to one is the only form that says so
+ * without a window function over every attempt the shop has ever made.
+ */
+const LAST_REMINDER_JOIN = Prisma.sql`
+  LEFT JOIN LATERAL (
+    SELECT l."id" AS last_reminder_id, l."email" AS last_reminder_email,
+           l."attempt" AS last_reminder_attempt, l."status" AS last_reminder_status,
+           l."detail" AS last_reminder_detail, l."trigger" AS last_reminder_trigger,
+           l."sent_by" AS last_reminder_sent_by, l."subject" AS last_reminder_subject,
+           l."item_count" AS last_reminder_item_count, l."subtotal" AS last_reminder_subtotal,
+           l."created_at" AS last_reminder_created_at,
+           u."displayName" AS last_reminder_sent_by_name
+    FROM "abc_reminder_log" l
+    LEFT JOIN "User" u ON u."id" = l."sent_by"
+    WHERE l."cart_id" = c."id"
+    ORDER BY l."created_at" DESC
+    LIMIT 1
+  ) lr ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT TRUE AS suppressed FROM "abc_suppressions" s
+    WHERE c."customer_email" IS NOT NULL AND s."email" = LOWER(c."customer_email")
+    LIMIT 1
+  ) sup ON TRUE
+`
 
-  const offset = Math.max(0, (opts.page - 1) * opts.perPage)
+const LIST_COLUMNS = Prisma.sql`
+  c."id", c."stage", c."lines", c."item_count", c."subtotal", c."currency",
+  c."customer_email", c."customer_name", c."customer_phone", c."shipping_address",
+  c."coupon_code", c."shipping_rate_id", c."payment_method", c."consent_basis",
+  c."marketing_opt_out", c."payment_stage", c."payment_attempted_at", c."payment_failure_reason",
+  c."member_id", c."first_seen_at", c."updated_at", c."checkout_started_at",
+  c."reminder_count", c."reminder_sent_at", c."recovered_at", c."recovered_order_number",
+  COALESCE(sup.suppressed, FALSE) AS "suppressed",
+  lr.last_reminder_id, lr.last_reminder_email, lr.last_reminder_attempt, lr.last_reminder_status,
+  lr.last_reminder_detail, lr.last_reminder_trigger, lr.last_reminder_sent_by,
+  lr.last_reminder_sent_by_name, lr.last_reminder_subject, lr.last_reminder_item_count,
+  lr.last_reminder_subtotal, lr.last_reminder_created_at
+`
+
+/** Everything narrowing the list, as one WHERE fragment. Built once and used by
+ *  the list, the count and the export, so a download can never quietly contain
+ *  a different set of baskets from the screen that asked for it. */
+function whereClause(query: Pick<CartQuery, 'filter' | 'search' | 'contact' | 'reminded' | 'payment' | 'minValue' | 'dateFrom' | 'dateTo'>): Prisma.Sql {
+  const parts: Prisma.Sql[] = [filterClause(query.filter)]
+
+  const search = query.search.trim().toLowerCase()
+  if (search) {
+    const like = `%${search}%`
+    parts.push(Prisma.sql`(LOWER(COALESCE(c."customer_email", '')) LIKE ${like}
+      OR LOWER(COALESCE(c."customer_name", '')) LIKE ${like}
+      OR LOWER(COALESCE(c."customer_phone", '')) LIKE ${like}
+      OR LOWER(COALESCE(c."coupon_code", '')) LIKE ${like}
+      OR LOWER(COALESCE(c."recovered_order_number", '')) LIKE ${like}
+      OR LOWER(COALESCE(c."shipping_address"->>'postcode', '')) LIKE ${like}
+      OR LOWER(COALESCE(c."shipping_address"->>'company', '')) LIKE ${like})`)
+  }
+
+  if (query.contact === 'with-email') parts.push(Prisma.sql`c."customer_email" IS NOT NULL`)
+  if (query.contact === 'without-email') parts.push(Prisma.sql`c."customer_email" IS NULL`)
+
+  if (query.reminded === 'yes') parts.push(Prisma.sql`c."reminder_count" > 0`)
+  if (query.reminded === 'no') parts.push(Prisma.sql`c."reminder_count" = 0`)
+  if (query.reminded === 'failed') {
+    parts.push(Prisma.sql`EXISTS (SELECT 1 FROM "abc_reminder_log" f WHERE f."cart_id" = c."id" AND f."status" = 'FAILED')`)
+  }
+  // "Cannot be emailed" is the same question the screen answers per row, asked
+  // of the whole table: no address, unsubscribed, or asked not to be. Kept in
+  // step with reminderBlockedReason in lib/types.ts by hand - there is no way
+  // to share one expression between SQL and the browser, so the comment is the
+  // only thing holding them together.
+  if (query.reminded === 'blocked') {
+    parts.push(Prisma.sql`c."recovered_at" IS NULL AND (
+      c."customer_email" IS NULL
+      OR c."marketing_opt_out" = TRUE
+      OR EXISTS (SELECT 1 FROM "abc_suppressions" s2 WHERE s2."email" = LOWER(c."customer_email"))
+    )`)
+  }
+
+  if (query.payment === 'attempted') parts.push(Prisma.sql`c."payment_stage" = 'ATTEMPTED'`)
+  if (query.payment === 'failed') parts.push(Prisma.sql`c."payment_stage" = 'FAILED'`)
+
+  const min = Number(query.minValue)
+  if (Number.isFinite(min) && min > 0) parts.push(Prisma.sql`c."subtotal" >= ${min.toFixed(2)}::numeric`)
+
+  // Dates arrive as plain days from a date input and are read in the server's
+  // own zone, which is the zone every other timestamp on this screen is shown
+  // in. "To" covers the whole of its day rather than stopping at midnight,
+  // because an owner picking today means today.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(query.dateFrom)) {
+    parts.push(Prisma.sql`c."updated_at" >= ${new Date(`${query.dateFrom}T00:00:00`)}`)
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(query.dateTo)) {
+    parts.push(Prisma.sql`c."updated_at" <= ${new Date(`${query.dateTo}T23:59:59.999`)}`)
+  }
+
+  return parts.reduce((acc, part, index) => (index === 0 ? part : Prisma.sql`${acc} AND ${part}`))
+}
+
+function orderClause(sort: CartQuery['sort']): Prisma.Sql {
+  switch (sort) {
+    case 'oldest':
+      return Prisma.sql`c."updated_at" ASC`
+    case 'value-high':
+      return Prisma.sql`c."subtotal" DESC, c."updated_at" DESC`
+    case 'value-low':
+      return Prisma.sql`c."subtotal" ASC, c."updated_at" DESC`
+    case 'items-high':
+      return Prisma.sql`c."item_count" DESC, c."updated_at" DESC`
+    default:
+      return Prisma.sql`c."updated_at" DESC`
+  }
+}
+
+export async function listCarts(query: CartQuery): Promise<{ carts: AbandonedCart[]; total: number }> {
+  const where = whereClause(query)
+  const offset = Math.max(0, (query.page - 1) * query.perPage)
   const rows = await prisma.$queryRaw<Row[]>`
-    SELECT ${COLUMNS} FROM "abc_carts"
-    WHERE ${where} ${searchClause}
-    ORDER BY "updated_at" DESC
-    LIMIT ${opts.perPage} OFFSET ${offset}
+    SELECT ${LIST_COLUMNS} FROM "abc_carts" c ${LAST_REMINDER_JOIN}
+    WHERE ${where}
+    ORDER BY ${orderClause(query.sort)}
+    LIMIT ${query.perPage} OFFSET ${offset}
   `
   const counted = await prisma.$queryRaw<Array<{ count: bigint }>>`
-    SELECT COUNT(*)::bigint AS count FROM "abc_carts" WHERE ${where} ${searchClause}
+    SELECT COUNT(*)::bigint AS count FROM "abc_carts" c WHERE ${where}
   `
   return { carts: rows.map(mapCart), total: Number(counted[0]?.count ?? 0) }
 }
 
-/** The four numbers on the strip above the list. One query, because three
+/**
+ * The same list with no paging, for the CSV.
+ *
+ * Capped rather than unbounded: one click must never try to stream a shop's
+ * whole history into a spreadsheet. The cap is reported back so the route can
+ * say so in the file rather than silently handing over the first five thousand
+ * and letting an owner believe that is all there was.
+ */
+export const EXPORT_LIMIT = 5000
+
+export async function listCartsForExport(query: CartQuery): Promise<{ carts: AbandonedCart[]; total: number }> {
+  const { total } = await listCarts({ ...query, page: 1, perPage: 1 })
+  const { carts } = await listCarts({ ...query, page: 1, perPage: EXPORT_LIMIT })
+  return { carts, total }
+}
+
+/** The counts beside each entry in the Show menu. One query, because three
  *  separate counts that disagree with each other is worse than none. */
 export async function countCarts(): Promise<Record<CartFilter, number>> {
   const rows = await prisma.$queryRaw<Array<{ stage: string; recovered: boolean; count: bigint }>>`
@@ -267,13 +429,84 @@ export async function countCarts(): Promise<Record<CartFilter, number>> {
   return counts
 }
 
+/**
+ * The tiles above the list.
+ *
+ * Deliberately not filtered by whatever the screen is currently showing: these
+ * are the shop's figures, and a tile that changes when you search for somebody
+ * is a tile nobody can quote. The recovery rate is measured over the last 30
+ * days by when the basket was first seen, which is the only window in which
+ * "how many came back" means anything - a basket left this morning has not had
+ * its chance yet.
+ */
+export async function getStats(): Promise<AbandonedCartsStats> {
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+
+  const [totals, recent, reminders, suppressed, lastRun] = await Promise.all([
+    prisma.$queryRaw<Array<Record<string, unknown>>>`
+      SELECT
+        COUNT(*) FILTER (WHERE "recovered_at" IS NULL)::bigint AS open_count,
+        COALESCE(SUM("subtotal") FILTER (WHERE "recovered_at" IS NULL), 0) AS open_value,
+        COUNT(*) FILTER (WHERE "recovered_at" IS NULL AND "stage" = 'CHECKOUT')::bigint AS checkout_count,
+        COALESCE(SUM("subtotal") FILTER (WHERE "recovered_at" IS NULL AND "stage" = 'CHECKOUT'), 0) AS checkout_value,
+        COUNT(*) FILTER (WHERE "recovered_at" IS NULL AND "customer_email" IS NOT NULL)::bigint AS with_email_count,
+        COUNT(*) FILTER (WHERE "recovered_at" IS NOT NULL)::bigint AS recovered_count,
+        COALESCE(SUM("subtotal") FILTER (WHERE "recovered_at" IS NOT NULL), 0) AS recovered_value
+      FROM "abc_carts"
+    `,
+    prisma.$queryRaw<Array<Record<string, unknown>>>`
+      SELECT COUNT(*)::bigint AS seen,
+             COUNT(*) FILTER (WHERE "recovered_at" IS NOT NULL)::bigint AS came_back
+      FROM "abc_carts" WHERE "first_seen_at" >= ${since}
+    `,
+    prisma.$queryRaw<Array<Record<string, unknown>>>`
+      SELECT COUNT(*) FILTER (WHERE "status" = 'SENT')::bigint AS sent,
+             COUNT(*) FILTER (WHERE "status" = 'FAILED')::bigint AS failed
+      FROM "abc_reminder_log" WHERE "created_at" >= ${since}
+    `,
+    prisma.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM "abc_suppressions"`,
+    getLastJobRun(),
+  ])
+
+  const t = totals[0] ?? {}
+  const seen = asNumber(recent[0]?.seen)
+  const cameBack = asNumber(recent[0]?.came_back)
+
+  return {
+    openCount: asNumber(t.open_count),
+    openValue: asNumber(t.open_value),
+    checkoutCount: asNumber(t.checkout_count),
+    checkoutValue: asNumber(t.checkout_value),
+    withEmailCount: asNumber(t.with_email_count),
+    recoveredCount: asNumber(t.recovered_count),
+    recoveredValue: asNumber(t.recovered_value),
+    recoveryRate: seen > 0 ? Math.round((cameBack / seen) * 1000) / 10 : null,
+    remindersSent30d: asNumber(reminders[0]?.sent),
+    remindersFailed30d: asNumber(reminders[0]?.failed),
+    unsubscribedCount: asNumber(suppressed[0]?.count),
+    lastRun,
+  }
+}
+
 export async function getCart(id: string): Promise<AbandonedCart | null> {
-  const rows = await prisma.$queryRaw<Row[]>`SELECT ${COLUMNS} FROM "abc_carts" WHERE "id" = ${id} LIMIT 1`
+  const rows = await prisma.$queryRaw<Row[]>`
+    SELECT ${LIST_COLUMNS} FROM "abc_carts" c ${LAST_REMINDER_JOIN} WHERE c."id" = ${id} LIMIT 1
+  `
   return rows[0] ? mapCart(rows[0]) : null
 }
 
 export async function deleteCart(id: string): Promise<void> {
   await prisma.$executeRaw`DELETE FROM "abc_carts" WHERE "id" = ${id}`
+}
+
+/** Bin a selection in one go. Ids come from a browser, so the list is capped
+ *  and the query is parameterised; there is no "delete everything matching the
+ *  current filter" on purpose, because the filter can be a search box and one
+ *  fat finger away from the lot. */
+export async function deleteCarts(ids: string[]): Promise<number> {
+  const wanted = ids.filter((id) => typeof id === 'string' && id.length > 0).slice(0, 500)
+  if (wanted.length === 0) return 0
+  return prisma.$executeRaw`DELETE FROM "abc_carts" WHERE "id" = ANY(${wanted})`
 }
 
 export async function listCartsForMember(memberId: string): Promise<AbandonedCart[]> {
@@ -328,6 +561,136 @@ export async function recordReminderSent(id: string): Promise<void> {
     SET "reminder_count" = "reminder_count" + 1, "reminder_sent_at" = CURRENT_TIMESTAMP
     WHERE "id" = ${id}
   `
+}
+
+// ---------------------------------------------------------------------------
+// The reminder log
+// ---------------------------------------------------------------------------
+
+export type ReminderLogInput = {
+  cartId: string
+  email: string
+  attempt: number
+  status: ReminderStatus
+  detail?: string | null
+  trigger?: ReminderTrigger
+  sentBy?: string | null
+  subject?: string | null
+  itemCount?: number
+  subtotal?: number
+}
+
+/**
+ * Write down what happened to one attempt, sent or not.
+ *
+ * Never throws. A log write that falls over must not take the send with it: the
+ * email has already gone by the time this runs, and turning a delivered
+ * reminder into a failed job because a row would not insert is the wrong way
+ * round in every direction.
+ */
+export async function logReminder(input: ReminderLogInput): Promise<void> {
+  const address = normaliseEmail(input.email) ?? input.email.slice(0, 300)
+  await prisma.$executeRaw`
+    INSERT INTO "abc_reminder_log" (
+      "cart_id", "email", "attempt", "status", "detail", "trigger", "sent_by",
+      "subject", "item_count", "subtotal"
+    ) VALUES (
+      ${input.cartId}, ${address}, ${Math.max(1, Math.round(input.attempt))}, ${input.status},
+      ${input.detail ?? null}, ${input.trigger ?? 'AUTOMATIC'}, ${input.sentBy ?? null},
+      ${input.subject ?? null}, ${Math.max(0, Math.round(input.itemCount ?? 0))},
+      ${(input.subtotal ?? 0).toFixed(2)}::numeric
+    )
+  `.catch(() => 0)
+}
+
+/** Everything ever tried on one basket, newest first. Read when a row is opened
+ *  rather than carried in the list, because it is the answer to a question only
+ *  asked about one basket at a time. */
+export async function listRemindersForCart(cartId: string): Promise<ReminderLogEntry[]> {
+  const rows = await prisma.$queryRaw<Row[]>`
+    SELECT l."id", l."cart_id", l."email", l."attempt", l."status", l."detail", l."trigger",
+           l."sent_by", u."displayName" AS "sent_by_name", l."subject",
+           l."item_count", l."subtotal", l."created_at"
+    FROM "abc_reminder_log" l
+    LEFT JOIN "User" u ON u."id" = l."sent_by"
+    WHERE l."cart_id" = ${cartId}
+    ORDER BY l."created_at" DESC
+    LIMIT 50
+  `.catch(() => [] as Row[])
+  return rows.map(mapLogRow)
+}
+
+// ---------------------------------------------------------------------------
+// Unsubscribes, as a list somebody can actually look at
+// ---------------------------------------------------------------------------
+
+export type Suppression = { email: string; reason: string; createdAt: string }
+
+export async function listSuppressions(limit = 200): Promise<Suppression[]> {
+  const rows = await prisma.$queryRaw<Row[]>`
+    SELECT "email", "reason", "created_at" FROM "abc_suppressions"
+    ORDER BY "created_at" DESC LIMIT ${Math.max(1, Math.min(1000, limit))}
+  `.catch(() => [] as Row[])
+  return rows.map((row) => ({
+    email: (row.email as string) ?? '',
+    reason: (row.reason as string) ?? 'unsubscribed',
+    createdAt: asIso(row.created_at) ?? '',
+  }))
+}
+
+/**
+ * Take an address off the unsubscribe list.
+ *
+ * There for the shopper who writes in asking to be put back on, and for the
+ * owner who unsubscribed their own test address while setting the thing up. It
+ * does NOT untick the per-basket "don't email me" box: that was the shopper's
+ * own answer in the checkout, and an owner reversing it from the admin screen
+ * is not a thing this module is going to help with.
+ */
+export async function unsuppressEmail(email: string): Promise<void> {
+  const address = normaliseEmail(email)
+  if (!address) return
+  await prisma.$executeRaw`DELETE FROM "abc_suppressions" WHERE "email" = ${address}`
+}
+
+// ---------------------------------------------------------------------------
+// Job runs
+// ---------------------------------------------------------------------------
+
+/** How many runs are kept. Enough to see a pattern - "it has run every hour
+ *  since Tuesday" - and not enough to become a table in its own right. */
+const JOB_RUNS_KEPT = 100
+
+export async function recordJobRun(run: Omit<JobRunSummary, 'ranAt'>): Promise<void> {
+  await prisma.$executeRaw`
+    INSERT INTO "abc_job_runs" ("duration_ms", "purged", "considered", "sent", "skipped", "failed", "error")
+    VALUES (${Math.max(0, Math.round(run.durationMs))}, ${run.purged}, ${run.considered},
+            ${run.sent}, ${run.skipped}, ${run.failed}, ${run.error})
+  `.catch(() => 0)
+  await prisma.$executeRaw`
+    DELETE FROM "abc_job_runs" WHERE "id" NOT IN (
+      SELECT "id" FROM "abc_job_runs" ORDER BY "ran_at" DESC LIMIT ${JOB_RUNS_KEPT}
+    )
+  `.catch(() => 0)
+}
+
+export async function getLastJobRun(): Promise<JobRunSummary | null> {
+  const rows = await prisma.$queryRaw<Row[]>`
+    SELECT "ran_at", "duration_ms", "purged", "considered", "sent", "skipped", "failed", "error"
+    FROM "abc_job_runs" ORDER BY "ran_at" DESC LIMIT 1
+  `.catch(() => [] as Row[])
+  const row = rows[0]
+  if (!row) return null
+  return {
+    ranAt: asIso(row.ran_at) ?? '',
+    durationMs: asNumber(row.duration_ms),
+    purged: asNumber(row.purged),
+    considered: asNumber(row.considered),
+    sent: asNumber(row.sent),
+    skipped: asNumber(row.skipped),
+    failed: asNumber(row.failed),
+    error: (row.error as string) ?? null,
+  }
 }
 
 /** The row an unsubscribe link names, if it still exists. Only the address is
