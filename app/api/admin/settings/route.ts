@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db/prisma'
 import { errorResponse } from '@/lib/utils'
 import { requireAbandonedCartsUser } from '@/modules/abandoned-carts-for-shop/lib/access'
 import { removeLegacyCheckoutBox } from '@/modules/abandoned-carts-for-shop/lib/checkout-box'
+import { getLastJobRun } from '@/modules/abandoned-carts-for-shop/lib/db/carts'
 import {
   getAbandonedCartsSettings,
   getBannerState,
@@ -18,12 +19,13 @@ async function view() {
   // save, so it goes without anybody having to know it was there. Writes
   // nothing on a site that never had one.
   await removeLegacyCheckoutBox().catch(() => {})
-  const [settings, banner, config] = await Promise.all([
+  const [settings, banner, config, lastRun] = await Promise.all([
     getAbandonedCartsSettings(),
     getBannerState(),
     prisma.siteConfig
       .findUnique({ where: { id: 'singleton' }, select: { adminPath: true } })
       .catch(() => null),
+    getLastJobRun(),
   ])
   return {
     ...settings,
@@ -31,6 +33,11 @@ async function view() {
     // So the panel can link straight to the cookie settings and the email
     // wording it talks about, rather than describing where they are and hoping.
     adminPath: config?.adminPath ?? 'cactus-admin',
+    // The settings page describes how often reminders go out. Describing the
+    // schedule alone would be describing an intention: a site whose scheduled job
+    // has never fired looks exactly like a site where nothing was ever due. Same
+    // source as the line on the baskets list, so the two screens cannot disagree.
+    lastRun,
   }
 }
 

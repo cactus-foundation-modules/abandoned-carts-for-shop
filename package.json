@@ -1,6 +1,6 @@
 {
   "name": "cactus-module-abandoned-carts-for-shop",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Unfinished baskets for the Cactus shop, with the checkout details the shopper had typed and optional reminder emails, gated on the site's cookie banner",
   "license": "MIT",
   "private": true
