@@ -49,6 +49,7 @@ export async function sendBasketReminder(params: {
   lines: ResolvedCartLine[]
   subtotal: number
   unsubscribeToken: string
+  recoveryToken: string
 }): Promise<ReminderSendResult> {
   if (!isEmailConfigured()) {
     return { ok: false, reason: 'This site has no email provider set up yet', permanent: false }
@@ -85,10 +86,14 @@ export async function sendBasketReminder(params: {
     firstName,
     hasName: firstName ? 'true' : 'false',
     itemList,
-    // The cart, not the checkout: a basket in the same browser is still there,
-    // and one opened on a different device needs the things adding again - the
-    // cart page is the page that makes sense in both cases.
-    basketUrl: `${site}/shop/cart`,
+    // Through the recover route rather than straight at the basket page. The
+    // direct link only ever worked for somebody opening the email in the same
+    // browser the basket was built in, which on a phone is almost nobody - a
+    // mail app opens links in its own little browser with its own storage, so
+    // the shopper landed on an empty basket under a heading promising their
+    // things were still here. The route puts the lines back first and then
+    // sends them to the same page.
+    basketUrl: `${site}/api/m/abandoned-carts-for-shop/public/recover?t=${encodeURIComponent(params.recoveryToken)}`,
     unsubscribeUrl: `${site}/api/m/abandoned-carts-for-shop/public/unsubscribe?t=${encodeURIComponent(params.unsubscribeToken)}`,
     itemCount: String(listed.reduce((sum, line) => sum + line.quantity, 0)),
     basketTotal: formatMoney(params.subtotal, config.currencySymbol),

@@ -91,6 +91,7 @@ export async function runAbandonedCartJob(): Promise<ReminderRunResult> {
         lines,
         subtotal: cart.subtotal,
         unsubscribeToken: cart.unsubscribeToken,
+        recoveryToken: cart.recoveryToken,
       })
       if (outcome.ok) {
         await recordReminderSent(cart.id)

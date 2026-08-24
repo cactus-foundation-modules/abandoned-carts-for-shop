@@ -74,6 +74,11 @@ CREATE TABLE IF NOT EXISTS "abc_carts" (
     -- that is a hash of the address would let anybody who knows the address
     -- unsubscribe it, and worse, confirm it exists here.
     "unsubscribe_token" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    -- Random, per row, and the only thing the "here is your basket" link in the
+    -- reminder carries. Separate from the token above on purpose: these links
+    -- get forwarded and prefetched, and one token doing both jobs would let
+    -- anybody holding a basket link stop somebody else's emails.
+    "recovery_token" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
 
     -- How far the payment itself got, where the basket can tell. Heard from the
     -- shop's own window events - the press of Place order, and a checkout error
@@ -106,6 +111,7 @@ CREATE INDEX IF NOT EXISTS "abc_carts_stage_idx" ON "abc_carts" ("stage");
 CREATE INDEX IF NOT EXISTS "abc_carts_customer_email_idx" ON "abc_carts" ("customer_email");
 CREATE INDEX IF NOT EXISTS "abc_carts_member_id_idx" ON "abc_carts" ("member_id");
 CREATE UNIQUE INDEX IF NOT EXISTS "abc_carts_unsubscribe_token_key" ON "abc_carts" ("unsubscribe_token");
+CREATE UNIQUE INDEX IF NOT EXISTS "abc_carts_recovery_token_key" ON "abc_carts" ("recovery_token");
 
 -- ---------------------------------------------------------------------------
 -- Addresses that have asked not to be reminded again. Kept after the basket

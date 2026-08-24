@@ -520,7 +520,7 @@ export async function listCartsForMember(memberId: string): Promise<AbandonedCar
 // Reminders
 // ---------------------------------------------------------------------------
 
-export type ReminderCandidate = AbandonedCart & { unsubscribeToken: string }
+export type ReminderCandidate = AbandonedCart & { unsubscribeToken: string; recoveryToken: string }
 
 /**
  * Baskets a reminder is owed on: left alone for longer than the delay, with an
@@ -538,7 +538,7 @@ export async function listDueReminders(opts: {
   limit: number
 }): Promise<ReminderCandidate[]> {
   const rows = await prisma.$queryRaw<Row[]>`
-    SELECT ${COLUMNS}, "unsubscribe_token" FROM "abc_carts"
+    SELECT ${COLUMNS}, "unsubscribe_token", "recovery_token" FROM "abc_carts"
     WHERE "recovered_at" IS NULL
       AND "customer_email" IS NOT NULL
       AND "item_count" > 0
@@ -552,7 +552,11 @@ export async function listDueReminders(opts: {
     ORDER BY "updated_at" ASC
     LIMIT ${opts.limit}
   `
-  return rows.map((row) => ({ ...mapCart(row), unsubscribeToken: row.unsubscribe_token as string }))
+  return rows.map((row) => ({
+    ...mapCart(row),
+    unsubscribeToken: row.unsubscribe_token as string,
+    recoveryToken: row.recovery_token as string,
+  }))
 }
 
 export async function recordReminderSent(id: string): Promise<void> {
@@ -700,6 +704,28 @@ export async function findByUnsubscribeToken(token: string): Promise<{ email: st
     SELECT "customer_email" FROM "abc_carts" WHERE "unsubscribe_token" = ${token} LIMIT 1
   `
   return rows[0] ? { email: rows[0].customer_email } : null
+}
+
+/**
+ * The basket behind a "here is your basket" link.
+ *
+ * Lines and nothing else. The route that calls this hands them to the shop's own
+ * basket and redirects, so it has no business with the address, the name or
+ * anything else typed into the checkout - and a link that got forwarded, pasted
+ * into a group chat or fetched by a scanner should not be able to read those
+ * back out.
+ *
+ * A basket that has since been paid for hands back nothing: the shopper who
+ * clicks last week's reminder after ordering wants their current basket, not a
+ * finished one pushed back into it.
+ */
+export async function findLinesByRecoveryToken(token: string): Promise<CartLine[] | null> {
+  const rows = await prisma.$queryRaw<Array<{ lines: unknown }>>`
+    SELECT "lines" FROM "abc_carts"
+    WHERE "recovery_token" = ${token} AND "recovered_at" IS NULL
+    LIMIT 1
+  `
+  return rows[0] ? asLines(rows[0].lines) : null
 }
 
 export async function suppressEmail(email: string): Promise<void> {

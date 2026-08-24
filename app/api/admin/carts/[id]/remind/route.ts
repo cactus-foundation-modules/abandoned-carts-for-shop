@@ -9,7 +9,7 @@ import {
 import { sendBasketReminder } from '@/modules/abandoned-carts-for-shop/lib/emails'
 import { hasOrderedSince } from '@/modules/abandoned-carts-for-shop/lib/orders'
 import { resolveLines } from '@/modules/abandoned-carts-for-shop/lib/pricing'
-import { getUnsubscribeToken } from '@/modules/abandoned-carts-for-shop/lib/db/tokens'
+import { getReminderTokens } from '@/modules/abandoned-carts-for-shop/lib/db/tokens'
 import { reminderBlockedReason } from '@/modules/abandoned-carts-for-shop/lib/types'
 
 // POST /api/m/abandoned-carts-for-shop/admin/carts/<id>/remind
@@ -63,8 +63,8 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
     return errorResponse(`They have already ordered - it went out as ${ordered.orderNumber}.`, 409)
   }
 
-  const token = await getUnsubscribeToken(cart.id)
-  if (!token) return errorResponse('That basket is no longer here', 404)
+  const tokens = await getReminderTokens(cart.id)
+  if (!tokens) return errorResponse('That basket is no longer here', 404)
 
   try {
     const lines = await resolveLines(cart.lines)
@@ -73,7 +73,8 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
       customerName: cart.customerName,
       lines,
       subtotal: cart.subtotal,
-      unsubscribeToken: token,
+      unsubscribeToken: tokens.unsubscribeToken,
+      recoveryToken: tokens.recoveryToken,
     })
 
     if (!outcome.ok) {
