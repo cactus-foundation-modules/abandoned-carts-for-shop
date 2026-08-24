@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
     itemCount,
     subtotal,
     currency: config.currency,
-    consentBasis: consentBasis(gate),
+    consentBasis: consentBasis(),
     customerEmail: normaliseEmail(checkout?.customerEmail),
     customerName: tidy(checkout?.customerName),
     customerPhone: tidy(checkout?.customerPhone),

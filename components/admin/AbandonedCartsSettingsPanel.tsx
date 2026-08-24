@@ -55,15 +55,15 @@ function advice(saved: Settings): Array<{ tone: 'warning' | 'danger' | 'info'; t
 
   if (!bannerEnabled) {
     notes.push({
-      tone: 'danger',
+      tone: 'warning',
       linkPrivacy: true,
-      text: 'Your cookie banner is switched off, so nobody is asked anything and every unfinished basket is recorded - names, addresses and phone numbers included. That is your decision to make, but in the UK and the EU it is the sort of decision that wants deliberating over rather than drifting into.',
+      text: 'Your cookie banner is switched off, so no shopper is ever asked about marketing - and nothing is recorded here until one agrees. This is switched on but idle. Turn the banner on with a Marketing switch on it, on the Privacy tab, and baskets start arriving.',
     })
   } else if (!hasMarketingCategory) {
     notes.push({
-      tone: 'danger',
+      tone: 'warning',
       linkPrivacy: true,
-      text: 'Your cookie banner asks about cookies but has no Marketing switch on it, so there is nothing for a shopper to agree to and this records all of them regardless. Add the Marketing category on the Privacy tab - this module offers it as a one-click suggestion there.',
+      text: 'Your cookie banner has no Marketing switch on it, so there is nothing for a shopper to agree to and nothing is recorded here. This is switched on but idle. Add the Marketing category on the Privacy tab - this module offers it as a one-click suggestion there.',
     })
   } else {
     notes.push({
@@ -72,10 +72,10 @@ function advice(saved: Settings): Array<{ tone: 'warning' | 'danger' | 'info'; t
     })
   }
 
-  if (saved.emailsEnabled && bannerEnabled && !hasMarketingCategory) {
+  if (saved.emailsEnabled && (!bannerEnabled || !hasMarketingCategory)) {
     notes.push({
-      tone: 'warning',
-      text: 'Reminder emails are going to people who were never asked whether they wanted them. Every one carries a way to stop them, but that is the floor rather than the standard.',
+      tone: 'info',
+      text: 'Reminder emails are switched on but have nothing to send: no basket is being recorded, so there is nobody to remind.',
     })
   }
 

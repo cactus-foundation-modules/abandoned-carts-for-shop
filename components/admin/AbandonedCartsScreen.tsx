@@ -325,8 +325,12 @@ export function AbandonedCartsScreen({ canManage }: { canManage: boolean }) {
                                   </div>
                                 )}
                                 <div style={{ marginTop: '0.5rem', ...muted }}>
+                                  {/* 'none' is only ever an older row: this module used to
+                                      record when a site's banner asked nothing. It no longer
+                                      does, and a row that predates that says so plainly rather
+                                      than being quietly relabelled. */}
                                   {cart.consentBasis === 'none'
-                                    ? 'Recorded with no cookie category on this site'
+                                    ? 'Recorded before this site asked about marketing cookies'
                                     : `Recorded with ${cart.consentBasis} consent`}
                                 </div>
                               </div>

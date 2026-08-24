@@ -132,9 +132,9 @@ export async function getBannerState(): Promise<BannerState> {
   }
 }
 
-/** Whether there is a switch to wait for. See GateMode for why 'allowed' is not
- *  the same as "granted". */
+/** Whether a shopper can agree to this at all. See GateMode for why a banner
+ *  that never asks means nothing is recorded, rather than everything. */
 export function gateFromBanner(banner: BannerState): GateMode {
-  if (!banner.bannerEnabled) return 'allowed'
-  return banner.hasMarketingCategory ? 'category' : 'allowed'
+  if (!banner.bannerEnabled) return 'unavailable'
+  return banner.hasMarketingCategory ? 'category' : 'unavailable'
 }

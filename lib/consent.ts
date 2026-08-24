@@ -32,18 +32,20 @@ export function readConsentDecision(request: NextRequest): Record<string, boolea
 /**
  * May this request be recorded?
  *
- * 'allowed' means the site has no switch for this, so there is nothing to wait
- * for - the owner's own decision, said out loud on the settings panel. Otherwise
- * the marketing category has to be granted, and a shopper who has not answered
- * the banner yet counts as not granted, exactly as a refusal does.
+ * One answer, and it is the shopper's: the marketing category has to have been
+ * granted. A shopper who has not answered the banner yet counts as not granted,
+ * exactly as a refusal does, and a site whose banner never asks the question
+ * ('unavailable') can never get a yes - so it never records anything.
  */
 export function mayCapture(request: NextRequest, gate: GateMode): boolean {
-  if (gate === 'allowed') return true
+  if (gate !== 'category') return false
   return readConsentDecision(request)?.[MARKETING_CATEGORY] === true
 }
 
 /** What was relied on, recorded with the row so the answer to "why do you hold
- *  this?" lives in the data rather than in somebody's memory. */
-export function consentBasis(gate: GateMode): string {
-  return gate === 'allowed' ? 'none' : MARKETING_CATEGORY
+ *  this?" lives in the data rather than in somebody's memory. Only ever the one
+ *  thing now, and kept as a stored column rather than assumed, because rows
+ *  written by an older version of this module say something else. */
+export function consentBasis(): string {
+  return MARKETING_CATEGORY
 }

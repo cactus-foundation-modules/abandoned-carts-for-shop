@@ -90,19 +90,24 @@ export function withOptOutBox(
 }
 
 /**
- * Whether there is a cookie switch to wait for at all.
+ * Whether a shopper is in a position to agree to this at all.
  *
- * 'category' - the site's banner carries the marketing category, so nothing is
- *              recorded until the shopper grants it.
- * 'allowed'  - there is nothing to wait for, because the banner is switched off
- *              or does not offer this category. Capture runs, and the settings
- *              panel says so in plain words rather than leaving the owner to
- *              find out: it is their decision and their exposure. Same rule the
- *              Google Tag and live chat modules follow, for the same reason -
- *              silence is the one answer a module must never invent on an
- *              owner's behalf.
+ * 'category'    - the site's banner carries the marketing category, so nothing
+ *                 is recorded until the shopper grants it.
+ * 'unavailable' - the banner is switched off, or carries no marketing category,
+ *                 so there is no question for a shopper to answer. Nothing is
+ *                 recorded. Not "nothing to wait for, so go ahead": a shopper
+ *                 who was never asked has not agreed, and this module holds
+ *                 names, addresses and phone numbers belonging to people who
+ *                 never placed an order. The settings panel tells the owner why
+ *                 it is idle and what to switch on.
+ *
+ * This is where this module parts company with Google Tag and live chat, which
+ * do run when a site has no banner. They can: a tag that fires or a chat widget
+ * that loads is visible on the page and stops the moment the shopper says so.
+ * A row holding somebody's address is neither.
  */
-export type GateMode = 'allowed' | 'category'
+export type GateMode = 'category' | 'unavailable'
 
 /** What the site's banner actually looks like right now, for the settings panel. */
 export type BannerState = {

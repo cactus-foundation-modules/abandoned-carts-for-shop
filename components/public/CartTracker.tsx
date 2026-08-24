@@ -69,10 +69,10 @@ export function CartTracker({ config }: { config: TrackerConfig }) {
   const { gate, captureBaskets } = config
 
   const snapshot = useSyncExternalStore(subscribeConsent, consentSnapshot, serverSnapshot)
-  // 'allowed' means the site's banner has no switch for this, so there is
-  // nothing to wait for. See GateMode in lib/types.ts - it is the owner's
-  // decision, and the settings panel says out loud that they have made it.
-  const allowed = gate === 'allowed' || snapshot === '1'
+  // One way in: the shopper has granted marketing on the banner. A site whose
+  // banner never asks ('unavailable') never gets a grant and so never records
+  // anything - see GateMode in lib/types.ts.
+  const allowed = gate === 'category' && snapshot === '1'
 
   // The last payload actually sent. A basket that has not changed is not worth a
   // request, and the checkout fires its change event on every keystroke.
