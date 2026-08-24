@@ -20,13 +20,10 @@ type Settings = {
   optOutBoxEnabled: boolean
   optOutStatement: string
   banner: Banner
-  /** Whether the permission box is really in the checkout. It lives on the
-   *  shop's own tickbox list, where it can be edited or deleted. */
-  checkoutBoxLive: boolean
   adminPath: string
 }
 
-type Draft = Omit<Settings, 'banner' | 'adminPath' | 'checkoutBoxLive'>
+type Draft = Omit<Settings, 'banner' | 'adminPath'>
 
 function draftOf(s: Settings): Draft {
   return {
@@ -72,13 +69,6 @@ function advice(saved: Settings): Array<{ tone: 'warning' | 'danger' | 'info'; t
     notes.push({
       tone: 'info',
       text: 'Nothing is recorded until a shopper agrees to Marketing cookies on your banner. A shopper who later changes their mind has everything of theirs deleted straight away, basket and typed details alike.',
-    })
-  }
-
-  if (saved.emailsEnabled && saved.optOutBoxEnabled && !saved.checkoutBoxLive) {
-    notes.push({
-      tone: 'warning',
-      text: 'The permission box is switched on here but is not in your checkout - it has been deleted or switched off on the shop\u2019s own Checkout settings, where it sits alongside your other tickboxes. Nobody is being asked. Save this page again to put it back.',
     })
   }
 
@@ -246,12 +236,11 @@ export function AbandonedCartsSettingsPanel() {
             <span>Add an email permission box to the checkout</span>
           </label>
           <p className="field-hint" style={{ marginTop: '-0.9rem', marginBottom: '1.25rem' }}>
-            Adds one more tickbox at the bottom of your checkout, under the ones a shopper has to
-            tick. Nobody has to tick it and it never holds an order up - but anybody who does is
-            left alone, and asking beforehand is a good deal politer than a link at the bottom of an
-            email they did not want. It appears with your other tickboxes on{' '}
-            <a href={`/${saved.adminPath}/config?tab=shop&sub=checkout`}>Settings &rsaquo; Shop &rsaquo; Checkout</a>,
-            where you can move or remove it.
+            Adds one tickbox to your checkout, directly under the email box - which is what it is
+            about, and the only place a shopper reads it as a question rather than as small print.
+            It appears once they have typed an address, nobody has to tick it, and it never holds an
+            order up. Anybody who does tick it is left alone, and asking beforehand is a good deal
+            politer than a link at the bottom of an email they did not want.
           </p>
 
           {draft.optOutBoxEnabled && (

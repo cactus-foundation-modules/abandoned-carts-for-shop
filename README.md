@@ -16,7 +16,7 @@ The whole thing waits on your cookie banner. No agreement, nothing recorded.
 - **Everything they typed.** Whatever was in the checkout boxes when they stopped, kept through a shopper who wanders back to the basket page and loses the form.
 - **Says what actually went wrong.** A card that was refused, and a shopper who was sent off to their bank and never came back, are two different missed sales - and neither leaves an order anywhere on the site, because those methods write no order until the money is committed. Both are named in the list, with the refusal in the words the shopper was shown.
 - **Marks its own successes.** A basket that turns into an order is closed and stamped with the order number, so the list tells you how many came back rather than only how many left.
-- **Asks first, if you want it to.** Switch the reminders on and you are offered a permission box for the checkout: one extra tickbox, under the ones a shopper has to tick, worded by you. Anybody who ticks it is left alone.
+- **Asks first, if you want it to.** Switch the reminders on and you are offered a permission box for the checkout: one tickbox directly under the email box, worded by you. Anybody who ticks it is left alone.
 - **Optional reminders.** Off by default. On a delay you choose, at most three per basket, never to somebody who has since ordered, never again to somebody who has asked you to stop. Wording lives in **Settings › Emails** with every other email on the site.
 - **Deletes itself on a schedule.** Baskets older than your retention setting go, whether they were reminded, recovered or neither.
 
@@ -36,7 +36,7 @@ This module records a name, an address and a phone number belonging to somebody 
 ## Requirements
 
 - Cactus core **0.5.1234** or newer
-- The **Shop** module, **0.1.300** or newer
+- The **Shop** module, **0.1.309** or newer
 - An email provider configured, if you want the reminders
 
 ## How it captures
@@ -58,15 +58,14 @@ The shop's basket lives in the browser until an order is placed, so this is the 
 | Email a reminder | Off | The reminders, and nothing sends while this is off. |
 | Wait before the reminder | 240 minutes | Since they last touched the basket. |
 | Reminders per basket | 1 | At most three. One is a favour, three is a habit. |
-| Add an email permission box to the checkout | Off | Offered once the reminders are on. Adds one tickbox under the compulsory ones; ticking it stops the reminder for that basket. Never required, never holds an order up. |
+| Add an email permission box to the checkout | Off | Offered once the reminders are on. Adds one tickbox directly under the email box; ticking it stops the reminder for that basket. Never required, never holds an order up. |
 | What the box says | "Don't email me about offers and similar products." | Your wording. Blank goes back to ours. |
 
 ### The permission box
 
-The box is one of the shop's own checkout tickboxes - the shop already lets you add, word and delete those, so the module writes its box into that list rather than asking the shop to grow anything for it. Two things follow:
+It sits under the email box on the contact step, and appears once the shopper has typed an address - a question about emailing somebody is unanswerable before there is somebody to email.
 
-- You will find it on **Settings › Shop › Checkout** with your own tickboxes, where you can re-word or delete it. Delete it there and the panel here says the box is missing rather than pretending shoppers are being asked.
-- Uninstalling this module drops its tables but cannot reach into the shop's settings, so the tickbox stays until you delete it there.
+Drawn by this module through the shop's `shop.checkout-contact-extras` point, so the shop itself carries nothing of it: a site running the shop without this module installed has the same checkout it always had, and uninstalling takes the box with it.
 
 ## Permissions
 
