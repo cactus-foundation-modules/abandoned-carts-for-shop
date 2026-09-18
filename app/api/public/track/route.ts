@@ -14,6 +14,8 @@ import {
   type CapturedAddress,
 } from '@/modules/abandoned-carts-for-shop/lib/types'
 import { clearVisitorCookie, mintVisitorId, readVisitorId, setVisitorCookie } from '@/modules/abandoned-carts-for-shop/lib/visitor'
+import { checkInMemoryRateLimit } from '@/modules/shop/lib/rate-limit'
+import { getClientIp } from '@/lib/auth/rate-limit'
 
 // POST /api/m/abandoned-carts-for-shop/public/track
 //
@@ -99,6 +101,11 @@ function tidyAddress(raw: CapturedAddress | undefined): CapturedAddress | null {
 }
 
 export async function POST(request: NextRequest) {
+  // Called on a debounce, so a person never gets near this. A script minting a
+  // fresh visitor per request would otherwise add a row every call.
+  if (!checkInMemoryRateLimit(`acs_track:${await getClientIp()}`, 60, 60_000)) {
+    return new NextResponse(null, { status: 429 })
+  }
   const settings = await getAbandonedCartsSettings()
   // Switched off, or not migrated yet. Either way: no row, no cookie, no answer
   // worth the shopper's bandwidth.

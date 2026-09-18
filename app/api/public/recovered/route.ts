@@ -4,6 +4,8 @@ import { markRecovered, markRecoveredByEmail } from '@/modules/abandoned-carts-f
 import { orderBelongsTo } from '@/modules/abandoned-carts-for-shop/lib/orders'
 import { normaliseEmail, tidy } from '@/modules/abandoned-carts-for-shop/lib/types'
 import { readVisitorId } from '@/modules/abandoned-carts-for-shop/lib/visitor'
+import { checkInMemoryRateLimit } from '@/modules/shop/lib/rate-limit'
+import { getClientIp } from '@/lib/auth/rate-limit'
 
 // POST /api/m/abandoned-carts-for-shop/public/recovered
 //
@@ -26,6 +28,11 @@ const Body = z.object({
 })
 
 export async function POST(request: NextRequest) {
+  // The order-number-and-address path is a guessing surface; nobody places
+  // twenty orders a minute.
+  if (!checkInMemoryRateLimit(`acs_recovered:${await getClientIp()}`, 20, 60_000)) {
+    return new NextResponse(null, { status: 429 })
+  }
   const parsed = Body.safeParse(await request.json().catch(() => ({})))
   if (!parsed.success) return new NextResponse(null, { status: 204 })
 

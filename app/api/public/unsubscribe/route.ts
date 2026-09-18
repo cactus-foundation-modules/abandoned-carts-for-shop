@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { findByUnsubscribeToken, optOutEmail, suppressEmail } from '@/modules/abandoned-carts-for-shop/lib/db/carts'
+import { checkInMemoryRateLimit } from '@/modules/shop/lib/rate-limit'
+import { getClientIp } from '@/lib/auth/rate-limit'
 
 // GET/POST /api/m/abandoned-carts-for-shop/public/unsubscribe?t=<token>
 //
@@ -55,6 +57,11 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // Tokens are not guessable, but there is no reason to let anyone try.
+  if (!checkInMemoryRateLimit(`acs_unsubscribe:${await getClientIp()}`, 20, 15 * 60 * 1000)) {
+    return page(`<h1 style="font-size:1.25rem;margin:0 0 0.75rem">Too many attempts</h1>
+<p style="margin:0;color:#6b6355">Please wait a few minutes and try the link again.</p>`, 429)
+  }
   // The form posts the token in its body; a client that kept it on the URL is
   // accepted too, since it is the same token either way.
   const form = await request.formData().catch(() => null)
