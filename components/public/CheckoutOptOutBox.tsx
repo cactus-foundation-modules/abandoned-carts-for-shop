@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import type { ShopCheckoutContactExtraProps } from '@/modules/shop/components/public/checkout-contact-extras'
 import { getCheckoutState, updateCheckoutState } from '@/modules/shop/components/public/checkout-state'
+import { MARKETING_CONSENT_AGREEMENT_ID } from '@/modules/shop/lib/marketing-consent'
 import {
   DEFAULT_OPTOUT_STATEMENT,
   OPTOUT_AGREEMENT_ID,
@@ -57,7 +58,18 @@ export function CheckoutOptOutBox({ customerEmail, preview = false }: ShopChecko
     setTicked(next)
     // Shop's own map, which is where every other checkout tickbox lives. Written
     // in full rather than patched, because that is the shape shop stores.
-    updateCheckoutState({ agreements: { ...getCheckoutState().agreements, [OPTOUT_AGREEMENT_ID]: next } })
+    //
+    // Two keys, one answer: OPTOUT_AGREEMENT_ID is this module's own, read back
+    // by shop-storage.ts for the /track capture into abc_carts - untouched.
+    // MARKETING_CONSENT_AGREEMENT_ID is shop's well-known key, inverted because
+    // this box asks the opposite question ("don't email me" ticked = declines).
+    updateCheckoutState({
+      agreements: {
+        ...getCheckoutState().agreements,
+        [OPTOUT_AGREEMENT_ID]: next,
+        [MARKETING_CONSENT_AGREEMENT_ID]: !next,
+      },
+    })
   }
 
   return (
