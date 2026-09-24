@@ -338,6 +338,11 @@ export type ReminderRules = {
   emailMaxPerCart: number
 }
 
+/** The one blocking reason that is an answer the shopper gave us rather than
+ *  something gone wrong. Named because `describeReminder` has to recognise it,
+ *  and two copies of the same sentence would drift apart the day it is reworded. */
+const OPTOUT_REASON = 'They asked not to be emailed'
+
 /** Why this basket will never be emailed, or null if it could be. Split out
  *  because the answer is wanted twice: on a basket nothing has been sent for,
  *  and on one where something has, to say whether another is coming. */
@@ -345,7 +350,7 @@ export function reminderBlockedReason(cart: AbandonedCart): string | null {
   if (cart.recoveredAt) return 'They came back and ordered'
   if (!cart.customerEmail) return 'No email address was typed'
   if (cart.suppressed) return 'This address has unsubscribed'
-  if (cart.marketingOptOut) return 'They asked not to be emailed'
+  if (cart.marketingOptOut) return OPTOUT_REASON
   if (cart.itemCount < 1) return 'Nothing left in the basket'
   return null
 }
@@ -387,9 +392,25 @@ export function describeReminder(cart: AbandonedCart, rules: ReminderRules): Rem
   if (blocked) {
     // A basket that was already ordered is not a blocked reminder, it is a
     // finished job. Saying "blocked" about it would put a warning badge on the
-    // one outcome everybody wanted.
-    const tone = cart.recoveredAt ? 'none' : 'blocked'
-    return { tone, label: cart.recoveredAt ? 'Not needed' : 'Will not be sent', at: null, detail: blocked, nextDueAt: null }
+    // one outcome everybody wanted. Nor is somebody who ticked the checkout box
+    // on a site with the reminders switched off: the box may be offered on its
+    // own, so that is a question answered as asked, not a basket going wrong,
+    // and one warning badge in a column of "switched off" rows reads as a fault.
+    // Deliberately only that one: an unsubscribe, a missing address or an empty
+    // basket is still worth an owner's eye whether or not anything is sending.
+    //
+    // Keyed on the reason actually shown, never on the flag: unsubscribing sets
+    // `marketing_opt_out` on that address's existing baskets as well as
+    // suppressing it, so a basket carrying both must read as the unsubscribe it
+    // is - which is also what its own sub-line says.
+    const quiet = Boolean(cart.recoveredAt) || (!rules.emailsEnabled && blocked === OPTOUT_REASON)
+    return {
+      tone: quiet ? 'none' : 'blocked',
+      label: cart.recoveredAt ? 'Not needed' : quiet ? 'Not sent' : 'Will not be sent',
+      at: null,
+      detail: blocked,
+      nextDueAt: null,
+    }
   }
 
   if (!rules.emailsEnabled) {

@@ -134,6 +134,20 @@ function advice(saved: Settings): Array<{ tone: 'warning' | 'danger' | 'info'; t
     })
   }
 
+  // The box is drawn from the settings alone, on purpose - a shopper who has
+  // refused marketing is exactly who should see they are not being emailed. But
+  // nothing is recorded for that shopper either, so a tick lands nowhere, and an
+  // owner is owed that in plain words rather than left to find it out.
+  if (saved.optOutBoxEnabled && (!bannerEnabled || !hasMarketingCategory)) {
+    notes.push({
+      // The banner note above has already offered the same link. Printing it
+      // twice in one stack makes two notes about one banner look like two jobs.
+      tone: 'warning',
+      linkPrivacy: !notes.some((note) => note.linkPrivacy),
+      text: 'The permission box is in your checkout, but nothing is being recorded, so ticking it has nowhere to land. Sort the cookie banner out above and the box starts working.',
+    })
+  }
+
   return notes
 }
 
@@ -333,43 +347,6 @@ export function AbandonedCartsSettingsPanel() {
         </p>
       )}
 
-      {draft.emailsEnabled && (
-        <>
-          <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1.25rem', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={draft.optOutBoxEnabled}
-              onChange={(e) => set('optOutBoxEnabled', e.target.checked)}
-            />
-            <span>Add an email permission box to the checkout</span>
-          </label>
-          <p className="field-hint" style={{ marginTop: '-0.9rem', marginBottom: '1.25rem' }}>
-            Adds one tickbox to your checkout, directly under the email box - which is what it is
-            about, and the only place a shopper reads it as a question rather than as small print.
-            It appears once they have typed an address, nobody has to tick it, and it never holds an
-            order up. Anybody who does tick it is left alone, and asking beforehand is a good deal
-            politer than a link at the bottom of an email they did not want.
-          </p>
-
-          {draft.optOutBoxEnabled && (
-            <div className="field">
-              <label htmlFor="abc-optout-statement">What the box says</label>
-              <input
-                id="abc-optout-statement"
-                type="text"
-                maxLength={200}
-                value={draft.optOutStatement}
-                onChange={(e) => set('optOutStatement', e.target.value)}
-              />
-              <p className="field-hint">
-                Worded so that ticking it means <em>no</em>. Leave it blank and it goes back to the
-                wording we ship with.
-              </p>
-            </div>
-          )}
-        </>
-      )}
-
       <div className="field">
         <label htmlFor="abc-email-delay">Wait before the reminder</label>
         <input
@@ -400,6 +377,48 @@ export function AbandonedCartsSettingsPanel() {
         />
         <p className="field-hint">One is a favour. Three is a habit somebody will report you for.</p>
       </div>
+
+      <hr style={{ margin: '1.5rem 0', border: 0, borderTop: '1px solid var(--color-border)' }} />
+
+      <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1.25rem', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={draft.optOutBoxEnabled}
+          onChange={(e) => set('optOutBoxEnabled', e.target.checked)}
+        />
+        <span>Add an email permission box to the checkout</span>
+      </label>
+      <p className="field-hint" style={{ marginTop: '-0.9rem', marginBottom: '1.25rem' }}>
+        Adds one tickbox to your checkout, directly under the email box - which is what it is
+        about, and the only place a shopper reads it as a question rather than as small print.
+        It appears once they have typed an address, nobody has to tick it, and it never holds an
+        order up. Anybody who does tick it is left alone, and asking beforehand is a good deal
+        politer than a link at the bottom of an email they did not want.
+      </p>
+      {draft.enabled && !draft.emailsEnabled && draft.optOutBoxEnabled && (
+        <p className="field-hint" style={{ marginBottom: '1.25rem' }}>
+          Reminders are switched off, so nobody is being emailed either way. The box still asks,
+          and a basket somebody ticks it on is left out of the reminders for as long as you keep
+          that basket - so switching the reminders on later sends nothing on that basket.
+        </p>
+      )}
+
+      {draft.optOutBoxEnabled && (
+        <div className="field">
+          <label htmlFor="abc-optout-statement">What the box says</label>
+          <input
+            id="abc-optout-statement"
+            type="text"
+            maxLength={200}
+            value={draft.optOutStatement}
+            onChange={(e) => set('optOutStatement', e.target.value)}
+          />
+          <p className="field-hint">
+            Worded so that ticking it means <em>no</em>. Leave it blank and it goes back to the
+            wording we ship with.
+          </p>
+        </div>
+      )}
 
       {err && <div className="alert alert-danger">{err}</div>}
       {msg && <div className="alert alert-success">{msg}</div>}

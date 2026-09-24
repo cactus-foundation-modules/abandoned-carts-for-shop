@@ -16,7 +16,7 @@ The whole thing waits on your cookie banner. No agreement, nothing recorded.
 - **Everything they typed.** Whatever was in the checkout boxes when they stopped, kept through a shopper who wanders back to the basket page and loses the form.
 - **Says what actually went wrong.** A card that was refused, and a shopper who was sent off to their bank and never came back, are two different missed sales - and neither leaves an order anywhere on the site, because those methods write no order until the money is committed. Both are named in the list, with the refusal in the words the shopper was shown.
 - **Marks its own successes.** A basket that turns into an order is closed and stamped with the order number, so the list tells you how many came back rather than only how many left.
-- **Asks first, if you want it to.** Switch the reminders on and you are offered a permission box for the checkout: one tickbox directly under the email box, worded by you. Anybody who ticks it is left alone.
+- **Asks first, if you want it to.** An optional permission box for the checkout: one tickbox directly under the email box, worded by you. A basket somebody ticks it on is left alone. It stands on its own: the reminders do not have to be on for the question to be asked, and a basket that was ticked stays out of the reminders for as long as you keep that basket.
 - **Optional reminders.** Off by default. On a delay you choose, at most three per basket, never to somebody who has since ordered, never again to somebody who has asked you to stop. Wording lives in **Settings › Emails** with every other email on the site.
 - **The link in the reminder brings the basket back.** Not a link to the basket page and a hope - it puts the things back first, so it works from the mail app on a phone, the laptop, or anywhere else that is not the browser the basket was built in. Never anything they typed into the checkout, only what they picked.
 - **Says whether the reminder actually went, and when.** Every attempt is written down - sent, would not send, or deliberately skipped, with the reason in plain English. The list carries it as a column; opening a basket shows the lot, in order, with who sent what by hand.
@@ -43,7 +43,7 @@ This module records a name, an address and a phone number belonging to somebody 
 ## Requirements
 
 - Cactus core **0.5.1234** or newer
-- The **Shop** module, **0.1.309** or newer
+- The **Shop** module, **0.1.310** or newer
 - An email provider configured, if you want the reminders
 
 ## How it captures
@@ -65,12 +65,14 @@ The shop's basket lives in the browser until an order is placed, so this is the 
 | Email a reminder | Off | The reminders, and nothing sends while this is off. |
 | Wait before the reminder | 240 minutes | Since they last touched the basket. |
 | Reminders per basket | 1 | At most three. One is a favour, three is a habit. |
-| Add an email permission box to the checkout | Off | Offered once the reminders are on. Adds one tickbox directly under the email box; ticking it stops the reminder for that basket. Never required, never holds an order up. |
+| Add an email permission box to the checkout | Off | Independent of the reminders - on or off, the question can be asked. Adds one tickbox directly under the email box; ticking it stops the reminder for that basket. Never required, never holds an order up. |
 | What the box says | "Don't email me about offers and similar products." | Your wording. Blank goes back to ours. |
 
 ### The permission box
 
 It sits under the email box on the contact step, and appears once the shopper has typed an address - a question about emailing somebody is unanswerable before there is somebody to email.
+
+It does not need the reminders switched on - only the module itself. Asking before you send anything is the polite order to do it in, and a basket that was ticked stays out of the reminders for as long as that basket is kept, so switching the reminders on later sends nothing on that basket. The answer rides on the basket, not on the person: it goes when the basket goes, on the retention setting above.
 
 Drawn by this module through the shop's `shop.checkout-contact-extras` point, so the shop itself carries nothing of it: a site running the shop without this module installed has the same checkout it always had, and uninstalling takes the box with it.
 

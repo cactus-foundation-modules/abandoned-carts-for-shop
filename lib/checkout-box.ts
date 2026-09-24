@@ -19,10 +19,16 @@ import {
 // so it is taken back out on the first settings read - otherwise they would get
 // the question twice, once in each place.
 
-/** Whether the box has any business being in the checkout at all. A permission
- *  question about emails nobody is sending is noise in somebody's checkout. */
+/** Whether the box has any business being in the checkout at all.
+ *
+ *  Deliberately NOT gated on emailsEnabled. An owner may want to ask the
+ *  question before they ever send anything - the answer is recorded against the
+ *  basket and honoured the day reminders are switched on, which is a good deal
+ *  better than emailing a first batch of people who were never asked. The only
+ *  requirement is that the module is on at all, since a box switched off holds
+ *  nothing anywhere. */
 export function shouldOfferOptOutBox(settings: AbandonedCartsSettings): boolean {
-  return settings.enabled && settings.emailsEnabled && settings.optOutBoxEnabled
+  return settings.enabled && settings.optOutBoxEnabled
 }
 
 /**

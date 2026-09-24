@@ -151,6 +151,36 @@ describe('describeReminder', () => {
     expect(state.detail).toMatch(/switched off/i)
   })
 
+  it('does not badge an opted-out basket as a problem when the reminders are off', () => {
+    const state = describeReminder(cart({ marketingOptOut: true }), { ...RULES, emailsEnabled: false })
+    expect(state.tone).toBe('none')
+    expect(state.label).toBe('Not sent')
+    expect(state.detail).toMatch(/asked not to be emailed/i)
+  })
+
+  // The shape the unsubscribe link actually leaves behind: it suppresses the
+  // address AND writes the opt-out onto that address's existing baskets, so a
+  // real unsubscribe carries both flags. Testing it with only `suppressed` set
+  // would pass while the live one did the opposite.
+  it('still badges an unsubscribe with the reminders off, both flags set, as the unsubscribe does it', () => {
+    const state = describeReminder(cart({ suppressed: true, marketingOptOut: true }), { ...RULES, emailsEnabled: false })
+    expect(state.tone).toBe('blocked')
+    expect(state.label).toBe('Will not be sent')
+    expect(state.detail).toMatch(/unsubscribed/i)
+  })
+
+  it('still badges an empty basket with the reminders off', () => {
+    const state = describeReminder(cart({ itemCount: 0 }), { ...RULES, emailsEnabled: false })
+    expect(state.tone).toBe('blocked')
+    expect(state.label).toBe('Will not be sent')
+  })
+
+  it('still badges an opted-out basket while the reminders are on', () => {
+    const state = describeReminder(cart({ marketingOptOut: true }), RULES)
+    expect(state.tone).toBe('blocked')
+    expect(state.label).toBe('Will not be sent')
+  })
+
   it('counts the delay from when the basket was last touched, before anything has gone', () => {
     const state = describeReminder(cart(), RULES)
     expect(state.tone).toBe('due')
