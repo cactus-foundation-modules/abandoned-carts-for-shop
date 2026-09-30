@@ -149,6 +149,16 @@ suite('saved baskets, against a real database', () => {
     expect(fresh.saved_at).toBeInstanceOf(Date)
   })
 
+  it('leaves saved baskets out of the automatic reminder run', async () => {
+    const withEmail = { ...base, customerEmail: 'jo@example.com' }
+    await carts.captureCart({ ...withEmail, visitorId: 'v-due' })
+    await carts.captureCart({ ...withEmail, visitorId: 'v-due-saved', saved: { reference: 'Q-0009' } })
+    const due = await carts.listDueReminders({ olderThan: new Date(Date.now() + 60_000), maxPerCart: 3, limit: 50 })
+    const references = due.map((cart) => cart.savedReference)
+    expect(due.some((cart) => cart.savedAt === null && cart.customerEmail === 'jo@example.com')).toBe(true)
+    expect(references).not.toContain('Q-0009')
+  })
+
   it('hands the save to the admin list and the single-basket read', async () => {
     const { carts: listed } = await carts.listCarts(DEFAULT_CART_QUERY)
     const saved = listed.find((cart) => cart.savedReference === 'Q-0002')

@@ -547,8 +547,11 @@ export type ReminderCandidate = AbandonedCart & { unsubscribeToken: string; reco
 /**
  * Baskets a reminder is owed on: left alone for longer than the delay, with an
  * address on them, not already reminded as often as the owner allows, not
- * belonging to somebody who has asked us to stop, and not ticked "don't email
- * me" in the checkout where the owner offers that box.
+ * belonging to somebody who has asked us to stop, not ticked "don't email
+ * me" in the checkout where the owner offers that box, and not saved on purpose
+ * (a quote, today) - somebody who parked their basket with a code has been
+ * emailed it already and knows exactly where it is. The owner can still send
+ * one of those by hand; only the automatic chase stops.
  *
  * The suppression check is a NOT EXISTS rather than a filter applied afterwards,
  * so a list capped at 200 can never come back full of rows that will all be
@@ -566,6 +569,7 @@ export async function listDueReminders(opts: {
       AND "item_count" > 0
       AND "updated_at" < ${opts.olderThan}
       AND "marketing_opt_out" = false
+      AND "saved_at" IS NULL
       AND "reminder_count" < ${opts.maxPerCart}
       AND ("reminder_sent_at" IS NULL OR "reminder_sent_at" < ${opts.olderThan})
       AND NOT EXISTS (

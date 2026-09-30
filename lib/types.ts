@@ -359,6 +359,11 @@ export type ReminderRules = {
  *  and two copies of the same sentence would drift apart the day it is reworded. */
 const OPTOUT_REASON = 'They asked not to be emailed'
 
+/** Why the automatic reminders leave a saved basket alone. Not a blocking
+ *  reason: the owner may still send one by hand, so reminderBlockedReason does
+ *  not return it and the Remind button stays. Mirrored in listDueReminders. */
+const SAVED_REASON = 'They saved their basket'
+
 /** Why this basket will never be emailed, or null if it could be. Split out
  *  because the answer is wanted twice: on a basket nothing has been sent for,
  *  and on one where something has, to say whether another is coming. */
@@ -384,7 +389,7 @@ export function describeReminder(cart: AbandonedCart, rules: ReminderRules): Rem
   const last = cart.lastReminder
 
   const dueAt = (): string | null => {
-    if (blocked || !rules.emailsEnabled) return null
+    if (blocked || !rules.emailsEnabled || cart.savedAt) return null
     if (cart.reminderCount >= rules.emailMaxPerCart) return null
     const from = new Date(cart.reminderSentAt ?? cart.updatedAt).getTime()
     if (!Number.isFinite(from)) return null
@@ -402,6 +407,7 @@ export function describeReminder(cart: AbandonedCart, rules: ReminderRules): Rem
     if (cart.reminderCount > 1) parts.push(`${cart.reminderCount} sent in all`)
     if (last?.trigger === 'MANUAL') parts.push(last.sentByName ? `Sent by hand by ${last.sentByName}` : 'Sent by hand')
     if (!next && blocked) parts.push(blocked)
+    else if (!next && cart.savedAt) parts.push(SAVED_REASON)
     return { tone: 'sent', label: 'Sent', at, detail: parts.join(' · ') || null, nextDueAt: next }
   }
 
@@ -431,6 +437,13 @@ export function describeReminder(cart: AbandonedCart, rules: ReminderRules): Rem
 
   if (!rules.emailsEnabled) {
     return { tone: 'none', label: 'Not sent', at: null, detail: 'Reminder emails are switched off', nextDueAt: null }
+  }
+
+  // Parked on purpose, so the automatic chase stands down. A quiet 'none'
+  // rather than a warning: nothing has gone wrong, the shopper answered the
+  // question before it was asked.
+  if (cart.savedAt) {
+    return { tone: 'none', label: 'Not sent', at: null, detail: SAVED_REASON, nextDueAt: null }
   }
 
   if (last?.status === 'SKIPPED') {

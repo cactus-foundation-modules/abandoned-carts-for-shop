@@ -188,6 +188,37 @@ describe('describeReminder', () => {
     expect(state.tone).toBe('due')
     expect(state.nextDueAt).toBe('2026-08-01T14:00:00.000Z')
   })
+
+  it('stands the automatic reminder down, quietly, on a basket saved on purpose', () => {
+    const saved = cart({ savedAt: '2026-08-01T10:05:00.000Z', savedReference: 'Q-0001' })
+    const state = describeReminder(saved, RULES)
+    expect(state.tone).toBe('none')
+    expect(state.label).toBe('Not sent')
+    expect(state.detail).toBe('They saved their basket')
+    expect(state.nextDueAt).toBeNull()
+    // Not a block: the owner can still send one by hand.
+    expect(reminderBlockedReason(saved)).toBeNull()
+  })
+
+  it('stops promising another once a reminded basket is saved', () => {
+    const state = describeReminder(
+      cart({
+        reminderCount: 1,
+        reminderSentAt: '2026-08-01T14:00:00.000Z',
+        lastReminder: log(),
+        savedAt: '2026-08-01T15:00:00.000Z',
+      }),
+      RULES,
+    )
+    expect(state.tone).toBe('sent')
+    expect(state.nextDueAt).toBeNull()
+    expect(state.detail).toBe('They saved their basket')
+  })
+
+  it('still says the emails are off, rather than blaming the save, when they are', () => {
+    const state = describeReminder(cart({ savedAt: '2026-08-01T10:05:00.000Z' }), { ...RULES, emailsEnabled: false })
+    expect(state.detail).toBe('Reminder emails are switched off')
+  })
 })
 
 describe('the list query', () => {
