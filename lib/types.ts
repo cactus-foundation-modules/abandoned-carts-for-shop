@@ -32,6 +32,11 @@ export const SHOP_CHECKOUT_EVENT = 'cactus-shop-checkout-changed'
 export const SHOP_PLACE_ORDER_EVENT = 'cactus-shop-place-order'
 export const SHOP_ORDER_ERROR_EVENT = 'cactus-shop-order-error'
 
+/** The conversion type a module announces on core's seam when a shopper saves
+ *  their basket on purpose (quote-for-shop's "Save cart as a quote", today).
+ *  Listened for rather than asked for, the same as the shop events above. */
+export const SAVED_CART_CONVERSION = 'saved-cart'
+
 /**
  * The id of the checkout tickbox this module asks the shop to carry.
  *
@@ -160,6 +165,12 @@ export type PaymentReport = {
   reason?: string | null
 }
 
+/** The shopper saved this basket on purpose. `reference` is whatever the
+ *  saving module called it - a quote number, today. */
+export type SavedReport = {
+  reference: string | null
+}
+
 /** Long enough for the sentence a checkout shows a shopper, short enough that a
  *  stack trace posted here is not stored. */
 export const MAX_REASON_LENGTH = 300
@@ -213,6 +224,11 @@ export type AbandonedCart = {
   paymentFailureReason: string | null
   reminderCount: number
   reminderSentAt: string | null
+  /** When the shopper saved this basket on purpose, and what the saving module
+   *  called it. A saved basket is still unfinished, but it was parked rather
+   *  than walked away from, and an owner chasing it should know. */
+  savedAt: string | null
+  savedReference: string | null
   recoveredAt: string | null
   recoveredOrderNumber: string | null
   /** This address has unsubscribed, so nothing will ever go to it again -

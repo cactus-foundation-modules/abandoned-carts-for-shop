@@ -76,6 +76,11 @@ const Body = z.object({
     // write no order at all until the money is committed.
     reason: z.string().max(MAX_REASON_LENGTH).nullable().optional(),
   }).nullable().optional(),
+  // The shopper saved this basket on purpose. Absent on an ordinary update,
+  // which never clears a save already recorded.
+  saved: z.object({
+    reference: z.string().max(100).nullable().optional(),
+  }).nullable().optional(),
 })
 
 /** Whether the shopper has actually started filling the checkout in, as opposed
@@ -177,6 +182,7 @@ export async function POST(request: NextRequest) {
     marketingOptOut: checkout?.marketingOptOut ?? null,
     paymentStage: parsed.data.payment?.stage ?? null,
     paymentFailureReason: parsed.data.payment ? tidy(parsed.data.payment.reason) : null,
+    saved: parsed.data.saved ? { reference: tidy(parsed.data.saved.reference) } : null,
   })
 
   return response

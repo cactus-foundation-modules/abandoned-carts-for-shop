@@ -706,6 +706,12 @@ export function AbandonedCartsScreen({ canManage }: { canManage: boolean }) {
                           {cart.recoveredOrderNumber}
                         </a>
                       )}
+                      {cart.savedAt && (
+                        <span className="badge badge-info abc-saved">Saved their basket</span>
+                      )}
+                      {cart.savedAt && cart.savedReference && (
+                        <span className="abc-sub">Saved as {cart.savedReference}</span>
+                      )}
                       {!cart.recoveredAt && stale && <span className="abc-sub">{STAGE_LABELS[cart.stage]}</span>}
                       {!cart.recoveredAt && cart.paymentStage && (
                         <span className="abc-sub">{PAYMENT_STAGE_LABELS[cart.paymentStage]}</span>
@@ -775,6 +781,12 @@ export function AbandonedCartsScreen({ canManage }: { canManage: boolean }) {
                             <h3>What happened</h3>
                             <p className="abc-detail-line">First seen {formatWhen(cart.firstSeenAt)}</p>
                             {cart.checkoutStartedAt && <p className="abc-detail-line">Reached checkout {formatWhen(cart.checkoutStartedAt)}</p>}
+                            {cart.savedAt && (
+                              <p className="abc-detail-line">
+                                Saved their basket {formatWhen(cart.savedAt)}
+                                {cart.savedReference ? ` as ${cart.savedReference}` : ''}
+                              </p>
+                            )}
                             {cart.paymentAttemptedAt && (
                               <p className="abc-detail-line">
                                 Pressed Place order {formatWhen(cart.paymentAttemptedAt)}

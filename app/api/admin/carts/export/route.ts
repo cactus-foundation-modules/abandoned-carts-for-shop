@@ -29,6 +29,7 @@ const COLUMNS = [
   'customer_name', 'customer_email', 'customer_phone',
   'may_we_email', 'reminder_state', 'reminders_sent', 'last_reminder_at', 'last_reminder_result', 'last_reminder_detail',
   'payment_stage', 'payment_failure_reason', 'coupon_code',
+  'saved_basket', 'saved_at', 'saved_reference',
   'delivery_company', 'delivery_line1', 'delivery_line2', 'delivery_city', 'delivery_county', 'delivery_postcode', 'delivery_country',
   'came_back', 'order_number', 'consent_basis',
 ] as const
@@ -85,6 +86,9 @@ export async function GET(request: NextRequest) {
       cart.paymentStage ?? '',
       cart.paymentFailureReason ?? '',
       cart.couponCode ?? '',
+      cart.savedAt ? 'yes' : 'no',
+      iso(cart.savedAt),
+      cart.savedReference ?? '',
       addressPart(cart.shippingAddress, 'company'),
       addressPart(cart.shippingAddress, 'line1'),
       addressPart(cart.shippingAddress, 'line2'),

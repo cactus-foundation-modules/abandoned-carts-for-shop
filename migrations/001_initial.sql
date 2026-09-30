@@ -93,6 +93,12 @@ CREATE TABLE IF NOT EXISTS "abc_carts" (
     "payment_attempted_at" TIMESTAMP(3),
     "payment_failure_reason" TEXT,
 
+    -- Set when the shopper saved the basket on purpose (a quote, today), heard
+    -- from core's conversion seam. The reference is whatever the saving module
+    -- called it, kept as text and never looked up. See 005_saved_basket.sql.
+    "saved_at" TIMESTAMP(3),
+    "saved_reference" TEXT,
+
     -- Set when an order was placed from this basket. The row stops being live
     -- at that moment: no more reminders, and a fresh basket starts a new row.
     "recovered_at" TIMESTAMP(3),

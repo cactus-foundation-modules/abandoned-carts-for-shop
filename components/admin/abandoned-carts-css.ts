@@ -72,6 +72,9 @@ button.abc-tile:focus-visible{outline:2px solid var(--color-border-focus);outlin
 .abc-name:hover{text-decoration:underline}
 .abc-name:focus-visible{outline:2px solid var(--color-border-focus);outline-offset:2px;border-radius:2px}
 .abc-sub{display:block;font-size:0.8125rem;color:var(--color-text-secondary)}
+/* A second badge in the status cell, under the first rather than beside it:
+   the column is narrow and two badges side by side wrap mid-word. */
+.abc-saved{display:table;margin-top:0.25rem}
 
 /* Badges are core's own .badge/.badge-success family, not a set of look-alikes
    defined here - the tone-to-class mapping is in the screen. */

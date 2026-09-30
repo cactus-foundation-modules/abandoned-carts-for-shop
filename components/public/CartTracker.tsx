@@ -10,7 +10,9 @@ import {
   SHOP_CHECKOUT_EVENT,
   SHOP_ORDER_ERROR_EVENT,
   SHOP_PLACE_ORDER_EVENT,
+  SAVED_CART_CONVERSION,
   type PaymentReport,
+  type SavedReport,
   type TrackerConfig,
 } from '@/modules/abandoned-carts-for-shop/lib/types'
 import { readCartLines, readCheckout } from '@/modules/abandoned-carts-for-shop/components/public/shop-storage'
@@ -30,6 +32,8 @@ import { readCartLines, readCheckout } from '@/modules/abandoned-carts-for-shop/
 //   4. Tells the server to forget everything the moment consent is withdrawn.
 //   5. Closes the row when core announces a sale, so a shopper who came back is
 //      never chased for the basket they finished.
+//   6. Notes when core announces the basket was saved on purpose (a quote,
+//      today), so the list can say it was parked rather than walked away from.
 //
 // Everything is claimed on `window` rather than in component state: the block
 // can legitimately sit in the header layout and the footer layout at once, and
@@ -85,6 +89,9 @@ export function CartTracker({ config }: { config: TrackerConfig }) {
   // is the whole point of it for a shopper handed over to their bank - says so
   // too.
   const paymentRef = useRef<PaymentReport | null>(null)
+  // The basket was saved on purpose. Carried the same way, for the same reason;
+  // the server keeps the first time it heard a given reference.
+  const savedRef = useRef<SavedReport | null>(null)
 
   const buildPayload = useCallback((): string | null => {
     const lines = readCartLines()
@@ -100,7 +107,7 @@ export function CartTracker({ config }: { config: TrackerConfig }) {
       checkout?.shippingAddress?.line1 || checkout?.shippingAddress?.postcode
     )
     if (!captureBaskets && !typed && !capturedRef.current) return null
-    return JSON.stringify({ lines, checkout, payment: paymentRef.current })
+    return JSON.stringify({ lines, checkout, payment: paymentRef.current, saved: savedRef.current })
   }, [captureBaskets])
 
   const send = useCallback((body: string, beacon: boolean): void => {
@@ -132,6 +139,12 @@ export function CartTracker({ config }: { config: TrackerConfig }) {
     send(body, beacon)
   }, [buildPayload, send])
 
+  // The conversion listener below subscribes once, because subscribing replays
+  // every conversion already announced on the page - a sale heard twice would
+  // be closed twice. It reaches the current report through this instead.
+  const reportRef = useRef(report)
+  useEffect(() => { reportRef.current = report }, [report])
+
   const schedule = useCallback((): void => {
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => report(false), DEBOUNCE_MS)
@@ -148,6 +161,7 @@ export function CartTracker({ config }: { config: TrackerConfig }) {
       lastSent.current = null
       capturedRef.current = false
       paymentRef.current = null
+      savedRef.current = null
       void fetch(`${BASE}/forget`, { method: 'POST', keepalive: true }).catch(() => {})
     }
   }, [allowed])
@@ -240,13 +254,25 @@ export function CartTracker({ config }: { config: TrackerConfig }) {
     }
   }, [allowed, report])
 
-  // A sale. Announced by core, so the shop never has to know this module is
-  // installed. Sent whatever the consent state: closing a record is not
+  // A sale, or a basket saved on purpose. Both announced by core, so neither
+  // the shop nor the module offering the save ever has to know this one is
+  // installed.
+  //
+  // A save is reported at once, and only with consent like any other report:
+  // it is something new about the shopper, not the closing of a record.
+  //
+  // A sale is sent whatever the consent state: closing a record is not
   // collecting anything, and a shopper who withdrew consent has had their row
   // deleted already, in which case this closes nothing.
   useEffect(() => {
     if (!owner.current) return
     return onConversion((conversion: Conversion) => {
+      if (conversion.type === SAVED_CART_CONVERSION) {
+        savedRef.current = { reference: conversion.transactionId ?? null }
+        if (timer.current) clearTimeout(timer.current)
+        reportRef.current(false)
+        return
+      }
       if (conversion.type !== 'purchase') return
       if (timer.current) clearTimeout(timer.current)
       const checkout = readCheckout()
@@ -259,6 +285,7 @@ export function CartTracker({ config }: { config: TrackerConfig }) {
       lastSent.current = null
       capturedRef.current = false
       paymentRef.current = null
+      savedRef.current = null
     })
   }, [])
 

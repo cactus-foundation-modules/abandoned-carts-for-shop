@@ -14,6 +14,7 @@ import {
   type ReminderLogEntry,
   type ReminderStatus,
   type ReminderTrigger,
+  type SavedReport,
 } from '@/modules/abandoned-carts-for-shop/lib/types'
 
 // Every read and write of this module's own tables. Raw SQL throughout, like
@@ -70,6 +71,8 @@ function mapCart(row: Row): AbandonedCart {
     checkoutStartedAt: asIso(row.checkout_started_at),
     reminderCount: asNumber(row.reminder_count),
     reminderSentAt: asIso(row.reminder_sent_at),
+    savedAt: asIso(row.saved_at),
+    savedReference: (row.saved_reference as string) ?? null,
     recoveredAt: asIso(row.recovered_at),
     recoveredOrderNumber: (row.recovered_order_number as string) ?? null,
     // Both arrive from the list query's own joins rather than a second round
@@ -118,7 +121,8 @@ const COLUMNS = Prisma.sql`
   "coupon_code", "shipping_rate_id", "payment_method", "consent_basis",
   "marketing_opt_out", "payment_stage", "payment_attempted_at", "payment_failure_reason",
   "member_id", "first_seen_at", "updated_at", "checkout_started_at",
-  "reminder_count", "reminder_sent_at", "recovered_at", "recovered_order_number"
+  "reminder_count", "reminder_sent_at", "saved_at", "saved_reference",
+  "recovered_at", "recovered_order_number"
 `
 
 export type CaptureInput = {
@@ -145,6 +149,9 @@ export type CaptureInput = {
    *  nothing new to say, and never clears what the row already holds. */
   paymentStage: PaymentStage | null
   paymentFailureReason: string | null
+  /** The shopper saved the basket on purpose. Null means nothing new to say,
+   *  and never clears a save the row already records. */
+  saved: SavedReport | null
 }
 
 /**
@@ -168,6 +175,7 @@ export async function captureCart(input: CaptureInput): Promise<void> {
       "customer_email", "customer_name", "customer_phone", "shipping_address",
       "coupon_code", "shipping_rate_id", "payment_method", "consent_basis",
       "marketing_opt_out", "payment_stage", "payment_attempted_at", "payment_failure_reason",
+      "saved_at", "saved_reference",
       "checkout_started_at", "updated_at"
     ) VALUES (
       ${input.visitorId}, ${input.memberId}, ${input.stage},
@@ -177,6 +185,7 @@ export async function captureCart(input: CaptureInput): Promise<void> {
       ${input.couponCode}, ${input.shippingRateId}, ${input.paymentMethod}, ${input.consentBasis},
       ${input.marketingOptOut ?? false},
       ${input.paymentStage}, ${input.paymentStage ? new Date() : null}, ${input.paymentFailureReason},
+      ${input.saved ? new Date() : null}, ${input.saved?.reference ?? null},
       ${checkoutStarted ? new Date() : null}, CURRENT_TIMESTAMP
     )
     ON CONFLICT ("visitor_id") WHERE "recovered_at" IS NULL DO UPDATE SET
@@ -208,6 +217,18 @@ export async function captureCart(input: CaptureInput): Promise<void> {
         THEN "abc_carts"."payment_attempted_at" ELSE EXCLUDED."payment_attempted_at" END,
       "payment_failure_reason" = CASE WHEN EXCLUDED."payment_stage" IS NULL
         THEN "abc_carts"."payment_failure_reason" ELSE EXCLUDED."payment_failure_reason" END,
+      -- A save is only ever added, never cleared by an update that does not
+      -- mention one. The tracker repeats the save on every report after it, so
+      -- the time only moves when the reference does: saving again after
+      -- changing the basket is a new save, the same one heard twice is not.
+      "saved_at" = CASE
+        WHEN EXCLUDED."saved_at" IS NULL THEN "abc_carts"."saved_at"
+        WHEN "abc_carts"."saved_at" IS NOT NULL
+          AND "abc_carts"."saved_reference" IS NOT DISTINCT FROM EXCLUDED."saved_reference"
+          THEN "abc_carts"."saved_at"
+        ELSE EXCLUDED."saved_at" END,
+      "saved_reference" = CASE WHEN EXCLUDED."saved_at" IS NULL
+        THEN "abc_carts"."saved_reference" ELSE EXCLUDED."saved_reference" END,
       "checkout_started_at" = COALESCE("abc_carts"."checkout_started_at", EXCLUDED."checkout_started_at"),
       "updated_at" = CURRENT_TIMESTAMP
   `
@@ -298,7 +319,8 @@ const LIST_COLUMNS = Prisma.sql`
   c."coupon_code", c."shipping_rate_id", c."payment_method", c."consent_basis",
   c."marketing_opt_out", c."payment_stage", c."payment_attempted_at", c."payment_failure_reason",
   c."member_id", c."first_seen_at", c."updated_at", c."checkout_started_at",
-  c."reminder_count", c."reminder_sent_at", c."recovered_at", c."recovered_order_number",
+  c."reminder_count", c."reminder_sent_at", c."saved_at", c."saved_reference",
+  c."recovered_at", c."recovered_order_number",
   COALESCE(sup.suppressed, FALSE) AS "suppressed",
   lr.last_reminder_id, lr.last_reminder_email, lr.last_reminder_attempt, lr.last_reminder_status,
   lr.last_reminder_detail, lr.last_reminder_trigger, lr.last_reminder_sent_by,

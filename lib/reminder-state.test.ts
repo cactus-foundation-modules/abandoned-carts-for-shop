@@ -46,6 +46,8 @@ function cart(patch: Partial<AbandonedCart> = {}): AbandonedCart {
     paymentFailureReason: null,
     reminderCount: 0,
     reminderSentAt: null,
+    savedAt: null,
+    savedReference: null,
     recoveredAt: null,
     recoveredOrderNumber: null,
     suppressed: false,
