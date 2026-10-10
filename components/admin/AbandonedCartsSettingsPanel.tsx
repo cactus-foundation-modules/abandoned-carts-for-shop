@@ -1,9 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { TabStrip } from '@/components/admin/TabStrip'
-import { useTabParam } from '@/components/admin/useTabParam'
 import { SettingsHeaderActions, SettingsHeaderStatus } from '@/components/admin/SettingsHeaderActions'
+import { InfoTip } from '@/components/admin/InfoTip'
 
 const API_BASE = '/api/m/abandoned-carts-for-shop'
 
@@ -154,15 +153,7 @@ function advice(saved: Settings): Array<{ tone: 'warning' | 'danger' | 'info'; t
   return notes
 }
 
-const SUB_TABS = [
-  { key: 'baskets', label: 'Baskets' },
-  { key: 'reminders', label: 'Reminder emails' },
-  { key: 'checkout', label: 'Checkout permission box' },
-] as const
-type SubTab = typeof SUB_TABS[number]['key']
-
 export function AbandonedCartsSettingsPanel() {
-  const [sub, setSub] = useTabParam<SubTab>('view', 'baskets', SUB_TABS.map((t) => t.key))
   const [saved, setSaved] = useState<Settings | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState(false)
@@ -257,10 +248,6 @@ export function AbandonedCartsSettingsPanel() {
         </div>
       ))}
 
-      <TabStrip
-        items={SUB_TABS.map((t) => ({ key: t.key, label: t.label, active: t.key === sub, onClick: () => setSub(t.key) }))}
-      />
-
       <SettingsHeaderActions>
         <SettingsHeaderStatus message={msg} error={err} />
         <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void save()}>
@@ -268,27 +255,22 @@ export function AbandonedCartsSettingsPanel() {
         </button>
       </SettingsHeaderActions>
 
-      {sub === 'baskets' && (
-        <div className="settings-cols">
+      <div className="settings-cols">
           <div className="card">
-      <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1.25rem', cursor: 'pointer' }}>
+      <div className="card-title">Baskets</div>
+      <label className="settings-check">
         <input type="checkbox" checked={draft.enabled} onChange={(e) => set('enabled', e.target.checked)} />
         <span>Keep unfinished baskets</span>
       </label>
 
-      <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1.25rem', cursor: 'pointer' }}>
+      <label className="settings-check">
         <input type="checkbox" checked={draft.captureBaskets} onChange={(e) => set('captureBaskets', e.target.checked)} />
         <span>Include baskets that never reached the checkout</span>
+        <InfoTip>Switch this off and you only keep the ones where somebody started filling the checkout in - far fewer of them, and every one with a name or an email on it.</InfoTip>
       </label>
-      <p className="field-hint" style={{ marginTop: '-0.9rem', marginBottom: '1.25rem' }}>
-        Switch this off and you only keep the ones where somebody started filling the checkout in -
-        far fewer of them, and every one with a name or an email on it.
-      </p>
 
-          </div>
-          <div className="card">
       <div className="field">
-        <label htmlFor="abc-abandon-after">Counts as abandoned after</label>
+        <label htmlFor="abc-abandon-after">Counts as abandoned after (minutes)</label>
         <input
           id="abc-abandon-after"
           type="number"
@@ -297,11 +279,11 @@ export function AbandonedCartsSettingsPanel() {
           value={draft.abandonAfterMinutes}
           onChange={(e) => set('abandonAfterMinutes', number(e.target.value, draft.abandonAfterMinutes))}
         />
-        <p className="field-hint">Minutes of nothing happening. Somebody still adding things is not abandoning anything.</p>
+        <p className="field-hint">Of nothing happening - somebody still adding things is not abandoning anything.</p>
       </div>
 
       <div className="field">
-        <label htmlFor="abc-retention">Delete baskets after</label>
+        <label htmlFor="abc-retention">Delete baskets after (days) <InfoTip>Everything older goes, whether it was reminded, recovered or neither. Keeping a stranger&rsquo;s address for ever because nobody chose a number is how a tidy feature turns into an awkward letter.</InfoTip></label>
         <input
           id="abc-retention"
           type="number"
@@ -310,36 +292,82 @@ export function AbandonedCartsSettingsPanel() {
           value={draft.retentionDays}
           onChange={(e) => set('retentionDays', number(e.target.value, draft.retentionDays))}
         />
-        <p className="field-hint">
-          Days. Everything older goes, whether it was reminded, recovered or neither. Keeping a
-          stranger&rsquo;s address for ever because nobody chose a number is how a tidy feature turns
-          into an awkward letter.
-        </p>
       </div>
 
           </div>
-        </div>
-      )}
-
-      {sub === 'reminders' && (
-        <div className="settings-cols">
           <div className="card">
-      <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1.25rem', cursor: 'pointer' }}>
+      <div className="card-title">Reminder email</div>
+      <label className="settings-check">
         <input type="checkbox" checked={draft.emailsEnabled} onChange={(e) => set('emailsEnabled', e.target.checked)} />
         <span>Email a reminder about unfinished baskets</span>
+        <InfoTip>
+          Only to shoppers who left an email address, never to somebody who has since ordered, and never again to
+          anybody who has asked us to stop. The wording is yours to change under Settings &rsaquo; Email &rsaquo; Templates.
+        </InfoTip>
       </label>
-      <p className="field-hint" style={{ marginTop: '-0.9rem', marginBottom: '1.25rem' }}>
-        Only to shoppers who left an email address, never to somebody who has since ordered, and
-        never again to anybody who has asked us to stop. The wording is yours to change under{' '}
-        <a href={`/${saved.adminPath}/config?tab=email&sub=templates`}>Settings &rsaquo; Emails</a>.
-      </p>
+      <label className="settings-check">
+        <input
+          type="checkbox"
+          checked={draft.optOutBoxEnabled}
+          onChange={(e) => set('optOutBoxEnabled', e.target.checked)}
+        />
+        <span>Add an email permission box to the checkout</span>
+        <InfoTip>Adds one tickbox to your checkout, directly under the email box - which is what it is about, and the only place a shopper reads it as a question rather than as small print. It appears once they have typed an address, nobody has to tick it, and it never holds an order up. Anybody who does tick it is left alone, and asking beforehand is a good deal politer than a link at the bottom of an email they did not want.</InfoTip>
+      </label>
+      <div className="field">
+        <label htmlFor="abc-email-delay">Wait before the reminder (minutes) <InfoTip>Counted from when they last touched the basket. Four hours is the usual: long enough that they have genuinely stopped, short enough that they still remember what they were buying. This is the earliest a reminder may go, not when it goes: it leaves on the next hourly check after this time is up, so anything under an hour behaves much like an hour.</InfoTip></label>
+        <input
+          id="abc-email-delay"
+          type="number"
+          min={15}
+          max={20160}
+          value={draft.emailDelayMinutes}
+          onChange={(e) => set('emailDelayMinutes', number(e.target.value, draft.emailDelayMinutes))}
+        />
+      </div>
+
+      <div className="field">
+        <label htmlFor="abc-email-max">Reminders per basket</label>
+        <input
+          id="abc-email-max"
+          type="number"
+          min={1}
+          max={3}
+          value={draft.emailMaxPerCart}
+          onChange={(e) => set('emailMaxPerCart', number(e.target.value, draft.emailMaxPerCart))}
+        />
+        <p className="field-hint">One is a favour. Three is a habit somebody will report you for.</p>
+      </div>
+
+      {draft.enabled && !draft.emailsEnabled && draft.optOutBoxEnabled && (
+        <p className="field-hint" style={{ marginBottom: '1.25rem' }}>
+          Reminders are switched off, so nobody is being emailed either way. The box still asks,
+          and a basket somebody ticks it on is left out of the reminders for as long as you keep
+          that basket - so switching the reminders on later sends nothing on that basket.
+        </p>
+      )}
+
+      {draft.optOutBoxEnabled && (
+        <div className="field">
+          <label htmlFor="abc-optout-statement">What the box says</label>
+          <input
+            id="abc-optout-statement"
+            type="text"
+            maxLength={200}
+            value={draft.optOutStatement}
+            onChange={(e) => set('optOutStatement', e.target.value)}
+          />
+          <p className="field-hint">
+            Worded so that ticking it means <em>no</em>. Leave it blank and it goes back to the
+            wording we ship with.
+          </p>
+        </div>
+      )}
 
       {draft.emailsEnabled && (
         <p
           className="field-hint"
           style={{
-            marginTop: '-0.5rem',
-            marginBottom: '1.25rem',
             padding: '0.75rem 0.9rem',
             border: '1px solid var(--color-border)',
             borderRadius: 'var(--radius-sm, 6px)',
@@ -380,88 +408,7 @@ export function AbandonedCartsSettingsPanel() {
       )}
 
           </div>
-          <div className="card">
-      <div className="field">
-        <label htmlFor="abc-email-delay">Wait before the reminder</label>
-        <input
-          id="abc-email-delay"
-          type="number"
-          min={15}
-          max={20160}
-          value={draft.emailDelayMinutes}
-          onChange={(e) => set('emailDelayMinutes', number(e.target.value, draft.emailDelayMinutes))}
-        />
-        <p className="field-hint">
-          Minutes since they last touched the basket. Four hours is the usual: long enough that they
-          have genuinely stopped, short enough that they still remember what they were buying. This
-          is the earliest a reminder may go, not when it goes: it leaves on the next hourly check
-          after this time is up, so anything under an hour behaves much like an hour.
-        </p>
       </div>
-
-      <div className="field">
-        <label htmlFor="abc-email-max">Reminders per basket</label>
-        <input
-          id="abc-email-max"
-          type="number"
-          min={1}
-          max={3}
-          value={draft.emailMaxPerCart}
-          onChange={(e) => set('emailMaxPerCart', number(e.target.value, draft.emailMaxPerCart))}
-        />
-        <p className="field-hint">One is a favour. Three is a habit somebody will report you for.</p>
-      </div>
-
-          </div>
-        </div>
-      )}
-
-      {sub === 'checkout' && (
-        <div className="settings-cols">
-          <div className="card">
-      <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1.25rem', cursor: 'pointer' }}>
-        <input
-          type="checkbox"
-          checked={draft.optOutBoxEnabled}
-          onChange={(e) => set('optOutBoxEnabled', e.target.checked)}
-        />
-        <span>Add an email permission box to the checkout</span>
-      </label>
-      <p className="field-hint" style={{ marginTop: '-0.9rem', marginBottom: '1.25rem' }}>
-        Adds one tickbox to your checkout, directly under the email box - which is what it is
-        about, and the only place a shopper reads it as a question rather than as small print.
-        It appears once they have typed an address, nobody has to tick it, and it never holds an
-        order up. Anybody who does tick it is left alone, and asking beforehand is a good deal
-        politer than a link at the bottom of an email they did not want.
-      </p>
-      {draft.enabled && !draft.emailsEnabled && draft.optOutBoxEnabled && (
-        <p className="field-hint" style={{ marginBottom: '1.25rem' }}>
-          Reminders are switched off, so nobody is being emailed either way. The box still asks,
-          and a basket somebody ticks it on is left out of the reminders for as long as you keep
-          that basket - so switching the reminders on later sends nothing on that basket.
-        </p>
-      )}
-
-      {draft.optOutBoxEnabled && (
-        <div className="field">
-          <label htmlFor="abc-optout-statement">What the box says</label>
-          <input
-            id="abc-optout-statement"
-            type="text"
-            maxLength={200}
-            value={draft.optOutStatement}
-            onChange={(e) => set('optOutStatement', e.target.value)}
-          />
-          <p className="field-hint">
-            Worded so that ticking it means <em>no</em>. Leave it blank and it goes back to the
-            wording we ship with.
-          </p>
-        </div>
-      )}
-
-          </div>
-        </div>
-      )}
     </div>
   )
 }
