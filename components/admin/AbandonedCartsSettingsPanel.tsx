@@ -1,6 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { TabStrip } from '@/components/admin/TabStrip'
+import { useTabParam } from '@/components/admin/useTabParam'
+import { SettingsHeaderActions, SettingsHeaderStatus } from '@/components/admin/SettingsHeaderActions'
 
 const API_BASE = '/api/m/abandoned-carts-for-shop'
 
@@ -151,7 +154,15 @@ function advice(saved: Settings): Array<{ tone: 'warning' | 'danger' | 'info'; t
   return notes
 }
 
+const SUB_TABS = [
+  { key: 'baskets', label: 'Baskets' },
+  { key: 'reminders', label: 'Reminder emails' },
+  { key: 'checkout', label: 'Checkout permission box' },
+] as const
+type SubTab = typeof SUB_TABS[number]['key']
+
 export function AbandonedCartsSettingsPanel() {
+  const [sub, setSub] = useTabParam<SubTab>('view', 'baskets', SUB_TABS.map((t) => t.key))
   const [saved, setSaved] = useState<Settings | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState(false)
@@ -246,6 +257,20 @@ export function AbandonedCartsSettingsPanel() {
         </div>
       ))}
 
+      <TabStrip
+        items={SUB_TABS.map((t) => ({ key: t.key, label: t.label, active: t.key === sub, onClick: () => setSub(t.key) }))}
+      />
+
+      <SettingsHeaderActions>
+        <SettingsHeaderStatus message={msg} error={err} />
+        <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void save()}>
+          {busy ? 'Saving…' : 'Save changes'}
+        </button>
+      </SettingsHeaderActions>
+
+      {sub === 'baskets' && (
+        <div className="settings-cols">
+          <div className="card">
       <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1.25rem', cursor: 'pointer' }}>
         <input type="checkbox" checked={draft.enabled} onChange={(e) => set('enabled', e.target.checked)} />
         <span>Keep unfinished baskets</span>
@@ -260,6 +285,8 @@ export function AbandonedCartsSettingsPanel() {
         far fewer of them, and every one with a name or an email on it.
       </p>
 
+          </div>
+          <div className="card">
       <div className="field">
         <label htmlFor="abc-abandon-after">Counts as abandoned after</label>
         <input
@@ -290,8 +317,13 @@ export function AbandonedCartsSettingsPanel() {
         </p>
       </div>
 
-      <hr style={{ margin: '1.5rem 0', border: 0, borderTop: '1px solid var(--color-border)' }} />
+          </div>
+        </div>
+      )}
 
+      {sub === 'reminders' && (
+        <div className="settings-cols">
+          <div className="card">
       <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1.25rem', cursor: 'pointer' }}>
         <input type="checkbox" checked={draft.emailsEnabled} onChange={(e) => set('emailsEnabled', e.target.checked)} />
         <span>Email a reminder about unfinished baskets</span>
@@ -347,6 +379,8 @@ export function AbandonedCartsSettingsPanel() {
         </p>
       )}
 
+          </div>
+          <div className="card">
       <div className="field">
         <label htmlFor="abc-email-delay">Wait before the reminder</label>
         <input
@@ -378,8 +412,13 @@ export function AbandonedCartsSettingsPanel() {
         <p className="field-hint">One is a favour. Three is a habit somebody will report you for.</p>
       </div>
 
-      <hr style={{ margin: '1.5rem 0', border: 0, borderTop: '1px solid var(--color-border)' }} />
+          </div>
+        </div>
+      )}
 
+      {sub === 'checkout' && (
+        <div className="settings-cols">
+          <div className="card">
       <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1.25rem', cursor: 'pointer' }}>
         <input
           type="checkbox"
@@ -420,12 +459,9 @@ export function AbandonedCartsSettingsPanel() {
         </div>
       )}
 
-      {err && <div className="alert alert-danger">{err}</div>}
-      {msg && <div className="alert alert-success">{msg}</div>}
-
-      <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void save()}>
-        {busy ? 'Saving…' : 'Save'}
-      </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
