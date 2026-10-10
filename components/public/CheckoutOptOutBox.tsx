@@ -49,6 +49,19 @@ export function CheckoutOptOutBox({ customerEmail, preview = false }: ShopChecko
     return () => { cancelled = true }
   }, [preview])
 
+  // The question has been put the moment the box is on screen, and a box left
+  // unticked is an answer: they are happy to hear from us. Recorded for shop
+  // straight away rather than only on a click, or every shopper who left it
+  // alone - most of them - reached the order as "Not asked". Only shop's key:
+  // this module's own stays unset until a click, as its tracker expects.
+  const showing = !preview && config?.enabled === true && customerEmail.trim().length > 0
+  useEffect(() => {
+    if (!showing) return
+    const agreements = getCheckoutState().agreements ?? {}
+    if (typeof agreements[MARKETING_CONSENT_AGREEMENT_ID] === 'boolean') return
+    updateCheckoutState({ agreements: { ...agreements, [MARKETING_CONSENT_AGREEMENT_ID]: !ticked } })
+  }, [showing, ticked])
+
   if (!config?.enabled) return null
   if (!preview && customerEmail.trim().length === 0) return null
 
