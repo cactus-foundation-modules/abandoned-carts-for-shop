@@ -9,6 +9,7 @@ import {
   readGuestCartId,
   setGuestCartCookie,
 } from '@/modules/shop/lib/guest-cart-cookie'
+import { publicUrl } from '@/lib/security/public-origin'
 
 // GET /api/m/abandoned-carts-for-shop/public/recover?t=<token>
 //
@@ -61,7 +62,7 @@ function merge(recovered: CartLine[], current: CartLine[]): CartLine[] {
 
 export async function GET(request: NextRequest) {
   const token = (new URL(request.url).searchParams.get('t') ?? '').trim().slice(0, 100)
-  const response = NextResponse.redirect(new URL(BASKET_PATH, request.url), 303)
+  const response = NextResponse.redirect(publicUrl(request, BASKET_PATH), 303)
   // Never cached, never kept by a shared proxy: the redirect carries a
   // Set-Cookie naming one shopper's basket.
   response.headers.set('Cache-Control', 'no-store')
